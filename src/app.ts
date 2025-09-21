@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import path from 'path';
 import { config, validateConfig } from './config/environment';
 import { logger } from './utils/logger';
 import { authenticateToken, requirePermission, generateToken, optionalAuthentication } from './middleware/auth';
@@ -16,7 +17,10 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
       connectSrc: ["'self'", "wss:", "ws:"],
+      imgSrc: ["'self'", "data:", "https:"],
     },
   },
 }));
@@ -47,6 +51,12 @@ app.use(cors({
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+app.use(express.static(path.join(__dirname, '../public')));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/index.html'));
+});
 
 app.get('/health', optionalAuthentication, (req, res) => {
   res.json({

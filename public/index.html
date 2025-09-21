@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time English ⇄ Japanese Translation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .language-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+        }
+        .english { border-color: #4CAF50; }
+        .japanese { border-color: #2196F3; }
+        
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+            transition: background-color 0.3s;
+        }
+        .record-btn {
+            background-color: #f44336;
+            color: white;
+        }
+        .record-btn:hover {
+            background-color: #da190b;
+        }
+        .record-btn.recording {
+            background-color: #ff9800;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .status {
+            text-align: center;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .status.connected { background-color: #d4edda; color: #155724; }
+        .status.disconnected { background-color: #f8d7da; color: #721c24; }
+        .status.processing { background-color: #fff3cd; color: #856404; }
+        
+        .transcript {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            min-height: 50px;
+            border-left: 4px solid #007bff;
+        }
+        .translation {
+            background-color: #e8f5e8;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            min-height: 50px;
+            border-left: 4px solid #28a745;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Real-time English ⇄ Japanese Translation 🔊</h1>
+        
+        <div class="status" id="connectionStatus">Connecting to server...</div>
+        
+        <div class="language-section english">
+            <h3>🇺🇸 English Input</h3>
+            <div class="controls">
+                <button id="recordEnglish" class="record-btn">🎤 Record English</button>
+            </div>
+            <div class="transcript" id="englishTranscript">Speak English and see the transcript here...</div>
+            <div class="translation" id="englishToJapanese">Japanese translation will appear here...</div>
+        </div>
+        
+        <div class="language-section japanese">
+            <h3>🇯🇵 Japanese Input</h3>
+            <div class="controls">
+                <button id="recordJapanese" class="record-btn">🎤 Record Japanese</button>
+            </div>
+            <div class="transcript" id="japaneseTranscript">日本語を話すとここに表示されます...</div>
+            <div class="translation" id="japaneseToEnglish">English translation will appear here...</div>
+        </div>
+        
+        <div id="errorMessages"></div>
+    </div>
+
+    <script>
+        class TranslationApp {
+            constructor() {
+                this.ws = null;
+                this.mediaRecorder = null;
+                this.audioChunks = [];
+                this.isRecording = false;
+                this.currentLanguage = null;
+                this.sessionId = this.generateSessionId();
+                
+                this.initializeElements();
+                this.connectWebSocket();
+                this.setupEventListeners();
+            }
+            
+            generateSessionId() {
+                return 'session_' + Math.random().toString(36).substr(2, 9);
+            }
+            
+            initializeElements() {
+                this.statusEl = document.getElementById('connectionStatus');
+                this.recordEnglishBtn = document.getElementById('recordEnglish');
+                this.recordJapaneseBtn = document.getElementById('recordJapanese');
+                this.englishTranscriptEl = document.getElementById('englishTranscript');
+                this.japaneseTranscriptEl = document.getElementById('japaneseTranscript');
+                this.englishToJapaneseEl = document.getElementById('englishToJapanese');
+                this.japaneseToEnglishEl = document.getElementById('japaneseToEnglish');
+                this.errorEl = document.getElementById('errorMessages');
+            }
+            
+            connectWebSocket() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}`;
+                
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    this.updateStatus('Connected to translation server', 'connected');
+                    this.sendMessage('status', { action: 'connect', sessionId: this.sessionId });
+                };
+                
+                this.ws.onmessage = (event) => {
+                    this.handleWebSocketMessage(JSON.parse(event.data));
+                };
+                
+                this.ws.onclose = () => {
+                    this.updateStatus('Disconnected from server', 'disconnected');
+                };
+                
+                this.ws.onerror = (error) => {
+                    this.showError('WebSocket connection error: ' + error.message);
+                };
+            }
+            
+            handleWebSocketMessage(message) {
+                switch (message.type) {
+                    case 'transcript':
+                        this.displayTranscript(message.data);
+                        break;
+                    case 'translation':
+                        this.displayTranslation(message.data);
+                        break;
+                    case 'audio':
+                        this.playAudio(message.data);
+                        break;
+                    case 'error':
+                        this.showError(message.data.message);
+                        break;
+                    case 'status':
+                        this.updateStatus(message.data.message, 'processing');
+                        break;
+                }
+            }
+            
+            setupEventListeners() {
+                this.recordEnglishBtn.addEventListener('click', () => {
+                    this.toggleRecording('en');
+                });
+                
+                this.recordJapaneseBtn.addEventListener('click', () => {
+                    this.toggleRecording('ja');
+                });
+            }
+            
+            async toggleRecording(language) {
+                if (this.isRecording) {
+                    this.stopRecording();
+                } else {
+                    await this.startRecording(language);
+                }
+            }
+            
+            async startRecording(language) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    this.mediaRecorder = new MediaRecorder(stream);
+                    this.audioChunks = [];
+                    this.currentLanguage = language;
+                    
+                    this.mediaRecorder.ondataavailable = (event) => {
+                        this.audioChunks.push(event.data);
+                    };
+                    
+                    this.mediaRecorder.onstop = () => {
+                        const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
+                        this.sendAudioData(audioBlob);
+                    };
+                    
+                    this.mediaRecorder.start();
+                    this.isRecording = true;
+                    
+                    const btn = language === 'en' ? this.recordEnglishBtn : this.recordJapaneseBtn;
+                    btn.textContent = '⏹️ Stop Recording';
+                    btn.classList.add('recording');
+                    
+                    this.updateStatus(`Recording ${language === 'en' ? 'English' : 'Japanese'}...`, 'processing');
+                    
+                } catch (error) {
+                    this.showError('Microphone access denied: ' + error.message);
+                }
+            }
+            
+            stopRecording() {
+                if (this.mediaRecorder && this.isRecording) {
+                    this.mediaRecorder.stop();
+                    this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                    this.isRecording = false;
+                    
+                    this.recordEnglishBtn.textContent = '🎤 Record English';
+                    this.recordJapaneseBtn.textContent = '🎤 Record Japanese';
+                    this.recordEnglishBtn.classList.remove('recording');
+                    this.recordJapaneseBtn.classList.remove('recording');
+                    
+                    this.updateStatus('Processing audio...', 'processing');
+                }
+            }
+            
+            sendAudioData(audioBlob) {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const audioData = reader.result;
+                    this.sendMessage('audio', {
+                        audioData: audioData,
+                        language: this.currentLanguage,
+                        sessionId: this.sessionId
+                    });
+                };
+                reader.readAsArrayBuffer(audioBlob);
+            }
+            
+            sendMessage(type, data) {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify({
+                        type: type,
+                        sessionId: this.sessionId,
+                        data: data,
+                        timestamp: Date.now()
+                    }));
+                }
+            }
+            
+            displayTranscript(data) {
+                const element = data.language === 'en' ? this.englishTranscriptEl : this.japaneseTranscriptEl;
+                element.textContent = data.transcript;
+            }
+            
+            displayTranslation(data) {
+                const element = data.sourceLanguage === 'en' ? this.englishToJapaneseEl : this.japaneseToEnglishEl;
+                element.textContent = data.translatedText;
+            }
+            
+            playAudio(audioData) {
+                const audio = new Audio();
+                const blob = new Blob([new Uint8Array(audioData)], { type: 'audio/wav' });
+                const url = URL.createObjectURL(blob);
+                audio.src = url;
+                audio.play().catch(error => {
+                    this.showError('Audio playback failed: ' + error.message);
+                });
+            }
+            
+            updateStatus(message, type) {
+                this.statusEl.textContent = message;
+                this.statusEl.className = `status ${type}`;
+            }
+            
+            showError(message) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error';
+                errorDiv.textContent = message;
+                this.errorEl.appendChild(errorDiv);
+                
+                setTimeout(() => {
+                    errorDiv.remove();
+                }, 5000);
+            }
+        }
+        
+        // Initialize the app when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new TranslationApp();
+        });
+    </script>
+</body>
+</html>
