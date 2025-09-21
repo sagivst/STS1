@@ -70,6 +70,13 @@ export function authenticateGitHubToken(req: AuthenticatedRequest, res: Response
 }
 
 export function optionalAuthentication(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  const authHeader = req.headers['authorization'];
+  
+  if (!authHeader) {
+    logger.debug('No authorization header provided, continuing without authentication');
+    return next();
+  }
+  
   try {
     authenticateGitHubToken(req, res, next);
   } catch (error) {
