@@ -50,6 +50,34 @@ export function requirePermission(permission: string) {
   };
 }
 
+export function authenticateGitHubToken(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (token && (token.startsWith('ghs_') || token.startsWith('ghp_'))) {
+    req.user = {
+      id: 'github-user',
+      email: 'github-user@codespaces.github.com',
+      permissions: ['translate'],
+      sessionLimit: config.performance.maxConcurrentSessions,
+    };
+    
+    logger.debug('GitHub token authentication successful');
+    return next();
+  }
+  
+  return authenticateToken(req, res, next);
+}
+
+export function optionalAuthentication(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  try {
+    authenticateGitHubToken(req, res, next);
+  } catch (error) {
+    logger.debug('Optional authentication failed, continuing without user context');
+    next();
+  }
+}
+
 export function generateToken(user: Partial<AuthenticatedUser>): string {
   return jwt.sign(
     {

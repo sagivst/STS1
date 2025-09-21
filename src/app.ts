@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { config, validateConfig } from './config/environment';
 import { logger } from './utils/logger';
-import { authenticateToken, requirePermission, generateToken } from './middleware/auth';
+import { authenticateToken, requirePermission, generateToken, optionalAuthentication } from './middleware/auth';
 import { sessionManager } from './services/session';
 import { TranslationError } from './utils/errors';
 
@@ -48,7 +48,7 @@ app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-app.get('/health', (req, res) => {
+app.get('/health', optionalAuthentication, (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -57,7 +57,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.get('/metrics', (req, res) => {
+app.get('/metrics', optionalAuthentication, (req, res) => {
   const metrics = {
     active_sessions: sessionManager.getActiveSessionCount(),
     max_sessions: config.performance.maxConcurrentSessions,
