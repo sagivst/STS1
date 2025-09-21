@@ -1,0 +1,41 @@
+{
+  "name": "Simultaneous Translation Solution",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/redis-server:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.vscode-typescript-next",
+        "esbenp.prettier-vscode",
+        "ms-vscode.vscode-eslint",
+        "ms-vscode.vscode-json",
+        "redhat.vscode-yaml",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "typescript.preferences.importModuleSpecifier": "relative",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "eslint.format.enable": true
+      }
+    }
+  },
+  "forwardPorts": [3000, 6379, 9090],
+  "portsAttributes": {
+    "3000": {
+      "label": "Translation Service",
+      "onAutoForward": "notify"
+    },
+    "6379": {
+      "label": "Redis"
+    },
+    "9090": {
+      "label": "Prometheus"
+    }
+  },
+  "postCreateCommand": "npm install",
+  "remoteUser": "node"
+}
