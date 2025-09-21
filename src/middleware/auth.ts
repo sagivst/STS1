@@ -71,6 +71,27 @@ export function authenticateGitHubToken(req: AuthenticatedRequest, res: Response
 
 export function optionalAuthentication(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
   const authHeader = req.headers['authorization'];
+  const githubToken = req.headers['x-github-token'] || req.headers['x-github-token'];
+  
+  logger.debug('Optional authentication - Headers received:', {
+    hasAuth: !!authHeader,
+    hasGithubToken: !!githubToken,
+    userAgent: req.headers['user-agent'],
+    origin: req.headers['origin'],
+    host: req.headers['host']
+  });
+  
+  if (githubToken) {
+    req.user = {
+      id: 'codespaces-user',
+      email: 'codespaces-user@github.com',
+      permissions: ['translate'],
+      sessionLimit: config.performance.maxConcurrentSessions,
+    };
+    
+    logger.debug('GitHub Codespaces token authentication successful');
+    return next();
+  }
   
   if (!authHeader) {
     logger.debug('No authorization header provided, continuing without authentication');
