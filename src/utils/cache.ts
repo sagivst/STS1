@@ -5,7 +5,7 @@ import { CacheEntry } from '../types';
 
 class CacheManager {
   private client: RedisClientType;
-  private memoryCache: Map<string, CacheEntry<any>> = new Map();
+  private memoryCache: Map<string, CacheEntry<unknown>> = new Map();
   private readonly MEMORY_CACHE_SIZE = 1000;
   private readonly MEMORY_CACHE_TTL = 5 * 60 * 1000;
 
@@ -36,7 +36,7 @@ class CacheManager {
     const memoryEntry = this.memoryCache.get(key);
     if (memoryEntry && Date.now() - memoryEntry.timestamp < memoryEntry.ttl) {
       logger.debug(`Cache hit (L1): ${key}`);
-      return memoryEntry.data;
+      return memoryEntry.data as T;
     }
 
     try {
@@ -78,7 +78,9 @@ class CacheManager {
   private setMemoryCache<T>(key: string, value: T, ttl: number): void {
     if (this.memoryCache.size >= this.MEMORY_CACHE_SIZE) {
       const firstKey = this.memoryCache.keys().next().value;
-      this.memoryCache.delete(firstKey);
+      if (firstKey) {
+        this.memoryCache.delete(firstKey);
+      }
     }
 
     this.memoryCache.set(key, {

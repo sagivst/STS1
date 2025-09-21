@@ -64,8 +64,9 @@ export class SessionManager {
     let session = this.activeSessions.get(sessionId);
     
     if (!session) {
-      session = await cacheManager.get<TranslationSession>(`session:${sessionId}`);
-      if (session) {
+      const cachedSession = await cacheManager.get<TranslationSession>(`session:${sessionId}`);
+      if (cachedSession) {
+        session = cachedSession;
         this.activeSessions.set(sessionId, session);
       }
     }

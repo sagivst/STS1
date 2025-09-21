@@ -56,7 +56,7 @@ export interface TTSResult {
 export interface WebSocketMessage {
   type: 'audio' | 'transcript' | 'translation' | 'error' | 'status';
   sessionId: string;
-  data: any;
+  data: unknown;
   timestamp: number;
 }
 

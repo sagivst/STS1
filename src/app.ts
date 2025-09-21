@@ -80,7 +80,7 @@ app.use((error: Error, req: express.Request, res: express.Response, next: expres
     });
   }
 
-  res.status(500).json({
+  return res.status(500).json({
     error: 'Internal server error',
     code: 'INTERNAL_ERROR',
     timestamp: new Date().toISOString(),

@@ -19,7 +19,7 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
   }
 
   try {
-    const decoded = jwt.verify(token, config.jwt.secret) as any;
+    const decoded = jwt.verify(token, config.jwt.secret) as jwt.JwtPayload & AuthenticatedUser;
     req.user = {
       id: decoded.id,
       email: decoded.email,
@@ -59,6 +59,6 @@ export function generateToken(user: Partial<AuthenticatedUser>): string {
       sessionLimit: user.sessionLimit || config.performance.maxConcurrentSessions,
     },
     config.jwt.secret,
-    { expiresIn: config.jwt.expiresIn }
+    { expiresIn: config.jwt.expiresIn } as jwt.SignOptions
   );
 }
