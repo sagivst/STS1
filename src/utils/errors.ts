@@ -51,3 +51,24 @@ export class RateLimitError extends TranslationError {
     this.name = 'RateLimitError';
   }
 }
+
+export class ServiceError extends TranslationError {
+  constructor(code: string, message: string, statusCode: number = 500) {
+    super(message, code, statusCode);
+    this.name = 'ServiceError';
+  }
+}
+
+export class ValidationError extends TranslationError {
+  constructor(message: string) {
+    super(message, 'VALIDATION_ERROR', 400);
+    this.name = 'ValidationError';
+  }
+}
+
+export class ConfigurationError extends TranslationError {
+  constructor(message: string) {
+    super(message, 'CONFIGURATION_ERROR', 500);
+    this.name = 'ConfigurationError';
+  }
+}
