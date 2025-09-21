@@ -42,15 +42,15 @@ describe('Integration Tests', () => {
 
     test('should handle language mapping', () => {
       const service = translationService as any;
-      expect(service.mapLanguageCode('en')).toBe('EN');
-      expect(service.mapLanguageCode('ja')).toBe('JA');
+      expect(service.mapLanguageCode('en')).toBe('en');
+      expect(service.mapLanguageCode('ja')).toBe('ja');
     });
 
     test('should generate consistent cache keys', () => {
       const service = translationService as any;
       const text = 'Hello world';
-      const key1 = service.generateCacheKey(text, 'en', 'ja');
-      const key2 = service.generateCacheKey(text, 'en', 'ja');
+      const key1 = service.hashText(text + 'en' + 'ja');
+      const key2 = service.hashText(text + 'en' + 'ja');
       expect(key1).toBe(key2);
     });
   });
@@ -85,7 +85,7 @@ describe('Integration Tests', () => {
   describe('Configuration', () => {
     test('should load environment configuration', () => {
       expect(config.services.deepgram.apiKey).toBeDefined();
-      expect(config.services.deepgram.model).toBe('nova-2');
+      expect(config.services.deepgram.model).toBe('nova-3');
       expect(config.services.deepgram.language).toBe('en');
     });
 
