@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { TranslationSession, SessionStatus, SessionMetrics, AuthenticatedUser } from '../types';
+import { TranslationSession, SessionStatus, AuthenticatedUser } from '../types';
 import { cacheManager } from '../utils/cache';
 import { logger } from '../utils/logger';
 import { SessionError } from '../utils/errors';
