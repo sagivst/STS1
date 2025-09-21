@@ -1,6 +1,8 @@
 {
   "name": "Simultaneous Translation Solution",
-  "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
   "features": {
     "ghcr.io/devcontainers/features/redis-server:1": {
       "version": "latest"
@@ -37,6 +39,5 @@
     }
   },
   "postCreateCommand": "npm install && npm run build",
-  "postStartCommand": "sudo service redis-server start",
   "remoteUser": "node"
 }
