@@ -1,20 +1,19 @@
-import * as sdk from 'microsoft-cognitiveservices-speech-sdk';
+import { ElevenLabsClient } from 'elevenlabs';
 import { config } from '../config/environment';
 import { logger } from '../utils/logger';
 import { TTSResult } from '../types';
 import { ServiceError } from '../utils/errors';
+import { cacheManager } from '../utils/cache';
+import { createHash } from 'crypto';
 
 export class TTSService {
-  private speechConfig: sdk.SpeechConfig;
-  private activeSynthesizers = new Map<string, sdk.SpeechSynthesizer>();
+  private client: ElevenLabsClient;
+  private activeSynthesis = new Map<string, boolean>();
 
   constructor() {
-    this.speechConfig = sdk.SpeechConfig.fromSubscription(
-      config.services.azure.speechKey,
-      config.services.azure.region
-    );
-    
-    this.speechConfig.speechSynthesisOutputFormat = sdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3;
+    this.client = new ElevenLabsClient({
+      apiKey: config.services.elevenlabs.apiKey,
+    });
   }
 
   async synthesizeSpeech(
@@ -25,102 +24,88 @@ export class TTSService {
     const startTime = Date.now();
     
     try {
-      const voiceName = this.getVoiceName(language);
-      const ssml = this.createSSML(text, voiceName);
+      this.activeSynthesis.set(sessionId, true);
+      
+      const cacheKey = this.generateCacheKey(text, language);
+      
+      const cachedAudio = await cacheManager.get(cacheKey);
+      if (cachedAudio) {
+        logger.info(`TTS cache hit for session ${sessionId}:`, { language, textLength: text.length });
+        const audioData = Buffer.from(cachedAudio as string, 'base64');
+        return {
+          audioData,
+          format: 'mp3',
+          duration: this.estimateAudioDuration(audioData.length),
+          timestamp: Date.now(),
+        };
+      }
+
+      const voiceId = this.selectVoice(language);
       
       logger.debug(`Starting TTS synthesis for session ${sessionId}:`, {
         language,
-        voiceName,
+        voiceId,
         textLength: text.length,
       });
 
-      const synthesizer = new sdk.SpeechSynthesizer(this.speechConfig);
-      this.activeSynthesizers.set(sessionId, synthesizer);
-
-      return new Promise((resolve, reject) => {
-        synthesizer.speakSsmlAsync(
-          ssml,
-          (result) => {
-            const latency = Date.now() - startTime;
-            
-            if (result.reason === sdk.ResultReason.SynthesizingAudioCompleted) {
-              const audioData = Buffer.from(result.audioData);
-              
-              const ttsResult: TTSResult = {
-                audioData,
-                format: 'mp3',
-                duration: this.estimateAudioDuration(audioData.length),
-                timestamp: Date.now(),
-              };
-
-              logger.info(`TTS synthesis completed for session ${sessionId}:`, {
-                language,
-                latency,
-                audioSize: audioData.length,
-                duration: ttsResult.duration,
-              });
-
-              this.activeSynthesizers.delete(sessionId);
-              synthesizer.close();
-              resolve(ttsResult);
-              
-            } else if (result.reason === sdk.ResultReason.Canceled) {
-              const cancellation = sdk.CancellationDetails.fromResult(result);
-              logger.error(`TTS synthesis cancelled for session ${sessionId}:`, {
-                reason: cancellation.reason,
-                errorDetails: cancellation.errorDetails,
-              });
-              
-              this.activeSynthesizers.delete(sessionId);
-              synthesizer.close();
-              
-              if (cancellation.reason === sdk.CancellationReason.Error) {
-                reject(new ServiceError('TTS_ERROR', `TTS synthesis failed: ${cancellation.errorDetails}`, 500));
-              } else {
-                reject(new ServiceError('TTS_CANCELLED', 'TTS synthesis was cancelled', 400));
-              }
-            }
-          },
-          (error) => {
-            logger.error(`TTS synthesis error for session ${sessionId}:`, error);
-            this.activeSynthesizers.delete(sessionId);
-            synthesizer.close();
-            reject(new ServiceError('TTS_ERROR', `TTS synthesis failed: ${error}`, 500));
-          }
-        );
+      const audioStream = await this.client.textToSpeech.convert(voiceId, {
+        text,
+        model_id: config.services.elevenlabs.model,
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.8,
+          style: 0.2,
+          use_speaker_boost: true,
+        },
+        optimize_streaming_latency: config.services.elevenlabs.latencyOptimization,
+        output_format: 'mp3_44100_128',
       });
 
+      const chunks: Buffer[] = [];
+      for await (const chunk of audioStream) {
+        chunks.push(chunk);
+      }
+      const audioData = Buffer.concat(chunks);
+
+      await cacheManager.set(cacheKey, audioData.toString('base64'), 3600);
+
+      const latency = Date.now() - startTime;
+      const ttsResult: TTSResult = {
+        audioData,
+        format: 'mp3',
+        duration: this.estimateAudioDuration(audioData.length),
+        timestamp: Date.now(),
+      };
+
+      logger.info(`TTS synthesis completed for session ${sessionId}:`, {
+        language,
+        latency,
+        audioSize: audioData.length,
+        duration: ttsResult.duration,
+      });
+
+      return ttsResult;
+
     } catch (error) {
-      logger.error(`TTS initialization failed for session ${sessionId}:`, error);
-      throw new ServiceError('TTS_INIT_ERROR', `Failed to initialize TTS: ${(error as Error).message}`, 500);
+      logger.error(`TTS synthesis failed for session ${sessionId}:`, error);
+      throw new ServiceError('TTS_ERROR', `TTS synthesis failed: ${(error as Error).message}`, 500);
+    } finally {
+      this.activeSynthesis.delete(sessionId);
     }
   }
 
-  private getVoiceName(language: 'en' | 'ja'): string {
-    return language === 'ja' 
-      ? config.services.azure.voiceNames.japanese
-      : config.services.azure.voiceNames.english;
+  private selectVoice(language: 'en' | 'ja'): string {
+    const voices = {
+      ja: 'Xb7hH8MSUJpSbSDYk0k2',
+      en: 'EXAVITQu4vr4xnSDxMaL',
+    };
+    
+    return voices[language];
   }
 
-  private createSSML(text: string, voiceName: string): string {
-    return `
-      <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${voiceName.startsWith('ja') ? 'ja-JP' : 'en-US'}">
-        <voice name="${voiceName}">
-          <prosody rate="0.9" pitch="+2%">
-            ${this.escapeXml(text)}
-          </prosody>
-        </voice>
-      </speak>
-    `.trim();
-  }
-
-  private escapeXml(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
+  private generateCacheKey(text: string, language: string): string {
+    const hash = createHash('md5').update(`${text}-${language}-elevenlabs`).digest('hex');
+    return `tts:${hash}`;
   }
 
   private estimateAudioDuration(audioSizeBytes: number): number {
@@ -129,27 +114,41 @@ export class TTSService {
   }
 
   cancelSynthesis(sessionId: string): void {
-    const synthesizer = this.activeSynthesizers.get(sessionId);
-    if (synthesizer) {
-      try {
-        synthesizer.close();
-        this.activeSynthesizers.delete(sessionId);
-        logger.info(`TTS synthesis cancelled for session ${sessionId}`);
-      } catch (error) {
-        logger.error(`Error cancelling TTS for session ${sessionId}:`, error);
-      }
+    if (this.activeSynthesis.has(sessionId)) {
+      this.activeSynthesis.delete(sessionId);
+      logger.info(`TTS synthesis cancelled for session ${sessionId}`);
     }
   }
 
   getActiveSynthesisCount(): number {
-    return this.activeSynthesizers.size;
+    return this.activeSynthesis.size;
   }
 
-  getAvailableVoices(): { japanese: string; english: string } {
+  getAvailableVoices() {
     return {
-      japanese: config.services.azure.voiceNames.japanese,
-      english: config.services.azure.voiceNames.english,
+      japanese: {
+        voiceId: 'Xb7hH8MSUJpSbSDYk0k2',
+        name: 'Japanese Female',
+        language: 'ja',
+      },
+      english: {
+        voiceId: 'EXAVITQu4vr4xnSDxMaL', 
+        name: 'Sarah',
+        language: 'en',
+      },
     };
+  }
+
+  async getVoiceList() {
+    try {
+      const voices = await this.client.voices.getAll();
+      return voices.voices.filter((voice: any) => 
+        voice.labels?.language === 'ja' || voice.labels?.language === 'en'
+      );
+    } catch (error) {
+      logger.error('Failed to fetch voice list', { error });
+      return [];
+    }
   }
 }
 

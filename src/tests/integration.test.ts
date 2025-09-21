@@ -56,7 +56,7 @@ describe('Integration Tests', () => {
   });
 
   describe('TTS Service', () => {
-    test('should initialize with Azure configuration', () => {
+    test('should initialize with ElevenLabs configuration', () => {
       expect(ttsService).toBeDefined();
       expect(ttsService.getActiveSynthesisCount()).toBe(0);
     });
@@ -65,20 +65,25 @@ describe('Integration Tests', () => {
       const voices = ttsService.getAvailableVoices();
       expect(voices).toHaveProperty('japanese');
       expect(voices).toHaveProperty('english');
+      expect(voices.japanese.language).toBe('ja');
+      expect(voices.english.language).toBe('en');
     });
 
-    test('should handle SSML creation', () => {
+    test('should handle voice selection', () => {
       const service = ttsService as any;
-      const ssml = service.createSSML('Hello world', 'en-US-JennyNeural');
-      expect(ssml).toContain('<speak');
-      expect(ssml).toContain('Hello world');
-      expect(ssml).toContain('en-US-JennyNeural');
+      const jaVoice = service.selectVoice('ja');
+      const enVoice = service.selectVoice('en');
+      expect(jaVoice).toBeDefined();
+      expect(enVoice).toBeDefined();
+      expect(jaVoice).not.toBe(enVoice);
     });
 
-    test('should escape XML characters', () => {
+    test('should generate consistent cache keys', () => {
       const service = ttsService as any;
-      const escaped = service.escapeXml('Hello & "world" <test>');
-      expect(escaped).toBe('Hello &amp; &quot;world&quot; &lt;test&gt;');
+      const key1 = service.generateCacheKey('Hello world', 'en');
+      const key2 = service.generateCacheKey('Hello world', 'en');
+      expect(key1).toBe(key2);
+      expect(key1).toContain('tts:');
     });
   });
 
@@ -91,7 +96,7 @@ describe('Integration Tests', () => {
 
     test('should have proper service endpoints', () => {
       expect(config.services.deepl.apiUrl).toContain('deepl.com');
-      expect(config.services.azure.region).toBeDefined();
+      expect(config.services.elevenlabs.apiUrl).toContain('elevenlabs.io');
     });
   });
 });

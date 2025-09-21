@@ -17,13 +17,11 @@ export const config = {
       apiKey: process.env.DEEPL_API_KEY || '',
       apiUrl: process.env.DEEPL_API_URL || 'https://api-free.deepl.com',
     },
-    azure: {
-      speechKey: process.env.AZURE_SPEECH_KEY || '',
-      region: process.env.AZURE_SPEECH_REGION || '',
-      voiceNames: {
-        japanese: 'ja-JP-NanamiNeural',
-        english: 'en-US-JennyNeural',
-      },
+    elevenlabs: {
+      apiKey: process.env.ELEVENLABS_API_KEY || '',
+      apiUrl: process.env.ELEVENLABS_API_URL || 'https://api.elevenlabs.io',
+      model: process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5',
+      latencyOptimization: parseInt(process.env.ELEVENLABS_LATENCY_OPTIMIZATION || '3'),
     },
   } as ServiceConfig,
 
@@ -53,8 +51,7 @@ export function validateConfig(): void {
   const required = [
     'DEEPGRAM_API_KEY',
     'DEEPL_API_KEY',
-    'AZURE_SPEECH_KEY',
-    'AZURE_SPEECH_REGION',
+    'ELEVENLABS_API_KEY',
     'JWT_SECRET',
   ];
 

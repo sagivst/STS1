@@ -77,13 +77,11 @@ export interface ServiceConfig {
     apiKey: string;
     apiUrl: string;
   };
-  azure: {
-    speechKey: string;
-    region: string;
-    voiceNames: {
-      japanese: string;
-      english: string;
-    };
+  elevenlabs: {
+    apiKey: string;
+    apiUrl: string;
+    model: string;
+    latencyOptimization: number;
   };
 }
 
