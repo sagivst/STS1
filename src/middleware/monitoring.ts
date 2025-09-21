@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
-import { PerformanceMetrics } from '../types';
 
 interface RequestWithMetrics extends Request {
   startTime?: number;
@@ -15,15 +14,6 @@ export function performanceMonitoring(req: RequestWithMetrics, res: Response, ne
   const originalSend = res.send;
   res.send = function(body) {
     const duration = Date.now() - (req.startTime || Date.now());
-    
-    const metrics: PerformanceMetrics = {
-      timestamp: Date.now(),
-      sessionId: req.sessionId || 'unknown',
-      operation: `${req.method} ${req.path}`,
-      duration,
-      success: res.statusCode < 400,
-      error: res.statusCode >= 400 ? `HTTP ${res.statusCode}` : undefined,
-    };
 
     logger.info('Request completed', {
       method: req.method,
@@ -50,9 +40,9 @@ export function performanceMonitoring(req: RequestWithMetrics, res: Response, ne
   next();
 }
 
-export function errorHandler(error: Error, req: Request, res: Response, next: NextFunction): void {
-  const statusCode = (error as any).statusCode || 500;
-  const code = (error as any).code || 'INTERNAL_ERROR';
+export function errorHandler(error: Error, req: Request, res: Response): void {
+  const statusCode = (error as unknown as { statusCode?: number }).statusCode || 500;
+  const code = (error as unknown as { code?: string }).code || 'INTERNAL_ERROR';
 
   logger.error('Request error', {
     error: error.message,
@@ -61,7 +51,7 @@ export function errorHandler(error: Error, req: Request, res: Response, next: Ne
     statusCode,
     method: req.method,
     path: req.path,
-    sessionId: (req as any).sessionId,
+    sessionId: (req as unknown as { sessionId?: string }).sessionId,
     userAgent: req.get('User-Agent'),
     ip: req.ip,
   });
@@ -82,7 +72,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
     query: req.query,
     userAgent: req.get('User-Agent'),
     ip: req.ip,
-    sessionId: (req as any).sessionId,
+    sessionId: (req as unknown as { sessionId?: string }).sessionId,
   });
 
   next();
