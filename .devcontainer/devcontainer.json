@@ -2,8 +2,9 @@
   "name": "Simultaneous Translation Solution",
   "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
   "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/devcontainers/features/redis-server:1": {}
+    "ghcr.io/devcontainers/features/redis-server:1": {
+      "version": "latest"
+    }
   },
   "customizations": {
     "vscode": {
@@ -12,8 +13,7 @@
         "esbenp.prettier-vscode",
         "ms-vscode.vscode-eslint",
         "ms-vscode.vscode-json",
-        "redhat.vscode-yaml",
-        "ms-azuretools.vscode-docker"
+        "redhat.vscode-yaml"
       ],
       "settings": {
         "typescript.preferences.importModuleSpecifier": "relative",
@@ -36,6 +36,7 @@
       "label": "Prometheus"
     }
   },
-  "postCreateCommand": "npm install",
+  "postCreateCommand": "npm install && npm run build",
+  "postStartCommand": "sudo service redis-server start",
   "remoteUser": "node"
 }
