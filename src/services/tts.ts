@@ -1,4 +1,4 @@
-import { ElevenLabsClient } from 'elevenlabs';
+import * as sdk from 'microsoft-cognitiveservices-speech-sdk';
 import { config } from '../config/environment';
 import { logger } from '../utils/logger';
 import { TTSResult } from '../types';
@@ -7,13 +7,14 @@ import { cacheManager } from '../utils/cache';
 import { createHash } from 'crypto';
 
 export class TTSService {
-  private client: ElevenLabsClient;
+  private speechConfig: sdk.SpeechConfig;
   private activeSynthesis = new Map<string, boolean>();
 
   constructor() {
-    this.client = new ElevenLabsClient({
-      apiKey: config.services.elevenlabs.apiKey,
-    });
+    this.speechConfig = sdk.SpeechConfig.fromSubscription(
+      config.services.azure.speechKey,
+      config.services.azure.speechRegion
+    );
   }
 
   async synthesizeSpeech(
@@ -34,57 +35,61 @@ export class TTSService {
         const audioData = Buffer.from(cachedAudio as string, 'base64');
         return {
           audioData,
-          format: 'mp3',
+          format: 'wav',
           duration: this.estimateAudioDuration(audioData.length),
           timestamp: Date.now(),
         };
       }
 
-      const voiceId = this.selectVoice(language);
+      const voice = this.selectVoice(language);
+      this.speechConfig.speechSynthesisVoiceName = voice;
+      this.speechConfig.speechSynthesisOutputFormat = sdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3;
       
       logger.debug(`Starting TTS synthesis for session ${sessionId}:`, {
         language,
-        voiceId,
+        voice,
         textLength: text.length,
       });
 
-      const audioStream = await this.client.textToSpeech.convert(voiceId, {
-        text,
-        model_id: config.services.elevenlabs.model,
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.8,
-          style: 0.2,
-          use_speaker_boost: true,
-        },
-        optimize_streaming_latency: config.services.elevenlabs.latencyOptimization,
-        output_format: 'mp3_44100_128',
+      const synthesizer = new sdk.SpeechSynthesizer(this.speechConfig);
+      
+      return new Promise((resolve, reject) => {
+        synthesizer.speakTextAsync(
+          text,
+          (result) => {
+            if (result.reason === sdk.ResultReason.SynthesizingAudioCompleted) {
+              const audioData = Buffer.from(result.audioData);
+              
+              cacheManager.set(cacheKey, audioData.toString('base64'), 3600);
+
+              const latency = Date.now() - startTime;
+              const ttsResult: TTSResult = {
+                audioData,
+                format: 'mp3',
+                duration: this.estimateAudioDuration(audioData.length),
+                timestamp: Date.now(),
+              };
+
+              logger.info(`TTS synthesis completed for session ${sessionId}:`, {
+                language,
+                latency,
+                audioSize: audioData.length,
+                duration: ttsResult.duration,
+              });
+
+              synthesizer.close();
+              resolve(ttsResult);
+            } else {
+              synthesizer.close();
+              reject(new Error(`Speech synthesis failed: ${result.errorDetails}`));
+            }
+          },
+          (error) => {
+            synthesizer.close();
+            reject(error);
+          }
+        );
       });
-
-      const chunks: Buffer[] = [];
-      for await (const chunk of audioStream) {
-        chunks.push(chunk);
-      }
-      const audioData = Buffer.concat(chunks);
-
-      await cacheManager.set(cacheKey, audioData.toString('base64'), 3600);
-
-      const latency = Date.now() - startTime;
-      const ttsResult: TTSResult = {
-        audioData,
-        format: 'mp3',
-        duration: this.estimateAudioDuration(audioData.length),
-        timestamp: Date.now(),
-      };
-
-      logger.info(`TTS synthesis completed for session ${sessionId}:`, {
-        language,
-        latency,
-        audioSize: audioData.length,
-        duration: ttsResult.duration,
-      });
-
-      return ttsResult;
 
     } catch (error) {
       logger.error(`TTS synthesis failed for session ${sessionId}:`, error);
@@ -96,15 +101,15 @@ export class TTSService {
 
   private selectVoice(language: 'en' | 'ja'): string {
     const voices = {
-      ja: 'Xb7hH8MSUJpSbSDYk0k2',
-      en: 'EXAVITQu4vr4xnSDxMaL',
+      ja: 'ja-JP-NanamiNeural',
+      en: 'en-US-JennyNeural',
     };
     
     return voices[language];
   }
 
   private generateCacheKey(text: string, language: string): string {
-    const hash = createHash('md5').update(`${text}-${language}-elevenlabs`).digest('hex');
+    const hash = createHash('md5').update(`${text}-${language}-azure`).digest('hex');
     return `tts:${hash}`;
   }
 
@@ -127,13 +132,13 @@ export class TTSService {
   getAvailableVoices() {
     return {
       japanese: {
-        voiceId: 'Xb7hH8MSUJpSbSDYk0k2',
-        name: 'Japanese Female',
+        voiceId: 'ja-JP-NanamiNeural',
+        name: 'Nanami (Japanese Female)',
         language: 'ja',
       },
       english: {
-        voiceId: 'EXAVITQu4vr4xnSDxMaL', 
-        name: 'Sarah',
+        voiceId: 'en-US-JennyNeural', 
+        name: 'Jenny (English Female)',
         language: 'en',
       },
     };
@@ -141,10 +146,20 @@ export class TTSService {
 
   async getVoiceList() {
     try {
-      const voices = await this.client.voices.getAll();
-      return voices.voices.filter((voice: any) => 
-        voice.labels?.language === 'ja' || voice.labels?.language === 'en'
-      );
+      const synthesizer = new sdk.SpeechSynthesizer(this.speechConfig);
+      const result = await synthesizer.getVoicesAsync();
+      
+      if (result.reason === sdk.ResultReason.VoicesListRetrieved) {
+        const voices = result.voices.filter((voice: any) => 
+          voice.locale.startsWith('ja-') || voice.locale.startsWith('en-')
+        );
+        synthesizer.close();
+        return voices;
+      } else {
+        synthesizer.close();
+        logger.error('Failed to fetch voice list', { error: result.errorDetails });
+        return [];
+      }
     } catch (error) {
       logger.error('Failed to fetch voice list', { error });
       return [];

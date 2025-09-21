@@ -77,11 +77,9 @@ export interface ServiceConfig {
     apiKey: string;
     apiUrl: string;
   };
-  elevenlabs: {
-    apiKey: string;
-    apiUrl: string;
-    model: string;
-    latencyOptimization: number;
+  azure: {
+    speechKey: string;
+    speechRegion: string;
   };
 }
 

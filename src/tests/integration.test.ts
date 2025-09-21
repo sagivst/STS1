@@ -56,7 +56,7 @@ describe('Integration Tests', () => {
   });
 
   describe('TTS Service', () => {
-    test('should initialize with ElevenLabs configuration', () => {
+    test('should initialize with Azure Speech configuration', () => {
       expect(ttsService).toBeDefined();
       expect(ttsService.getActiveSynthesisCount()).toBe(0);
     });
@@ -96,7 +96,8 @@ describe('Integration Tests', () => {
 
     test('should have proper service endpoints', () => {
       expect(config.services.deepl.apiUrl).toContain('deepl.com');
-      expect(config.services.elevenlabs.apiUrl).toContain('elevenlabs.io');
+      expect(config.services.azure.speechKey).toBeDefined();
+      expect(config.services.azure.speechRegion).toBeDefined();
     });
   });
 });
