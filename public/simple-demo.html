@@ -255,7 +255,8 @@
                     
                     // Step 1: Speech-to-Text
                     this.updateStatus('Converting speech to text...', 'processing');
-                    const sttResponse = await fetch('/api/stt', {
+                    const baseUrl = window.location.protocol + '//' + window.location.hostname + ':' + (window.location.port || '3000');
+                    const sttResponse = await fetch(baseUrl + '/api/stt', {
                         method: 'POST',
                         body: formData
                     });
@@ -269,7 +270,7 @@
                     
                     // Step 2: Translation
                     this.updateStatus('Translating...', 'processing');
-                    const translateResponse = await fetch('/api/translate', {
+                    const translateResponse = await fetch(baseUrl + '/api/translate', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -288,7 +289,7 @@
                     
                     // Step 3: Text-to-Speech
                     this.updateStatus('Generating speech...', 'processing');
-                    const ttsResponse = await fetch('/api/tts', {
+                    const ttsResponse = await fetch(baseUrl + '/api/tts', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
