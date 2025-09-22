@@ -163,6 +163,10 @@ app.get('/no-auth-demo', (req, res) => {
     'X-Mobile-Bypass': 'true',
     'X-Tunnel-Auth': 'bypass',
     'X-Skip-Auth': 'true',
+    'X-Bypass-Auth': 'true',
+    'X-Public-Access': 'true',
+    'X-Mobile-Safari-Bypass': 'true',
+    'X-iOS-Bypass': 'true',
     'Authorization': 'Bearer bypass-token'
   });
   
@@ -177,7 +181,17 @@ app.get('/no-auth-demo', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/simple-demo.html'));
 });
 
-app.get('/health', optionalAuthentication, async (req, res) => {
+app.get('/health', async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, DELETE',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+    'Access-Control-Allow-Credentials': 'false',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+  
   const healthChecks = await performHealthChecks();
   
   res.json({
