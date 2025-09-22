@@ -350,6 +350,7 @@
                 this.mediaRecorder = null;
                 this.audioChunks = [];
                 this.startTime = null;
+                this.audioContext = null;
                 this.operationStartTime = null;
                 
                 this.initializeElements();
@@ -539,54 +540,50 @@
                     
                     this.addLogEntry(`📊 Pipeline breakdown: STT(${sttLatency}ms) + Translation(${translateLatency}ms) + TTS(${ttsLatency}ms) = ${totalLatency}ms total`, 'info');
                     
+                    // Initialize AudioContext after user interaction (recording button was clicked)
+                    if (!this.audioContext) {
+                        try {
+                            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                            if (this.audioContext.state === 'suspended') {
+                                await this.audioContext.resume();
+                            }
+                            this.addLogEntry(`🔊 AudioContext initialized: ${this.audioContext.state}`, 'info');
+                        } catch (error) {
+                            this.addLogEntry(`❌ AudioContext initialization failed: ${error.message}`, 'error');
+                        }
+                    }
+                    
                     // Try multiple audio playback methods for better compatibility
                     try {
-                        // Method 1: Direct blob with explicit MIME type
-                        const playbackBlob = new Blob([audioArrayBuffer], { type: 'audio/wav; codecs=pcm' });
-                        const audioUrl = URL.createObjectURL(playbackBlob);
-                        const audio = new Audio();
-                        
-                        // Set audio properties for better compatibility
-                        audio.preload = 'auto';
-                        audio.crossOrigin = 'anonymous';
-                        
-                        // Add comprehensive event listeners
-                        audio.addEventListener('loadstart', () => {
-                            this.addLogEntry(`🔄 Audio loading started (${Math.round(audioArrayBuffer.byteLength/1024)}KB WAV)`, 'info');
-                        });
-                        
-                        audio.addEventListener('canplay', () => {
-                            this.addLogEntry(`✅ Audio ready to play`, 'success');
-                        });
-                        
-                        audio.addEventListener('loadeddata', () => {
-                            this.addLogEntry(`📥 Audio data loaded successfully`, 'success');
-                        });
-                        
-                        audio.addEventListener('error', (e) => {
-                            this.addLogEntry(`❌ Audio error: ${e.target.error?.message || 'Unknown error'}`, 'error');
-                            // Try fallback method
-                            this.tryAlternativeAudioPlayback(audioArrayBuffer, totalLatency);
-                        });
-                        
-                        audio.addEventListener('ended', () => {
-                            URL.revokeObjectURL(audioUrl);
-                            this.addLogEntry(`🎵 Audio playback completed`, 'success');
-                        });
-                        
-                        audio.src = audioUrl;
-                        
-                        audio.play().then(() => {
-                            this.addLogEntry(`🎵 Audio playback started - Total pipeline: ${totalLatency}ms`, 'success');
-                            this.updateStatus('Translation complete! Audio playing...', 'ready');
-                        }).catch(error => {
-                            this.addLogEntry(`❌ Audio play() failed: ${error.message}`, 'error');
-                            this.tryAlternativeAudioPlayback(audioArrayBuffer, totalLatency);
-                        });
+                        // Method 1: Web Audio API (preferred for better compatibility)
+                        if (this.audioContext && this.audioContext.state === 'running') {
+                            try {
+                                const audioBuffer = await this.audioContext.decodeAudioData(audioArrayBuffer.slice());
+                                const source = this.audioContext.createBufferSource();
+                                source.buffer = audioBuffer;
+                                source.connect(this.audioContext.destination);
+                                
+                                source.onended = () => {
+                                    this.addLogEntry(`🎵 Web Audio API playback completed`, 'success');
+                                };
+                                
+                                source.start(0);
+                                this.addLogEntry(`🎵 Web Audio API playback started - Total pipeline: ${totalLatency}ms`, 'success');
+                                this.updateStatus('Translation complete! Audio playing...', 'ready');
+                                
+                            } catch (webAudioError) {
+                                this.addLogEntry(`❌ Web Audio API failed: ${webAudioError.message}`, 'error');
+                                // Fallback to HTML5 Audio
+                                this.tryHtml5AudioPlayback(audioArrayBuffer, totalLatency);
+                            }
+                        } else {
+                            // Fallback to HTML5 Audio if AudioContext not available
+                            this.tryHtml5AudioPlayback(audioArrayBuffer, totalLatency);
+                        }
                         
                     } catch (error) {
-                        this.addLogEntry(`❌ Audio blob creation failed: ${error.message}`, 'error');
-                        this.tryAlternativeAudioPlayback(audioArrayBuffer, totalLatency);
+                        this.addLogEntry(`❌ Audio playback setup failed: ${error.message}`, 'error');
+                        this.tryHtml5AudioPlayback(audioArrayBuffer, totalLatency);
                     }
                     
                 } catch (error) {
@@ -635,36 +632,58 @@
                 }
             }
             
-            tryAlternativeAudioPlayback(audioArrayBuffer, totalLatency) {
-                this.addLogEntry(`🔄 Trying alternative audio playback method...`, 'info');
+            tryHtml5AudioPlayback(audioArrayBuffer, totalLatency) {
+                this.addLogEntry(`🔄 Trying HTML5 Audio playback method...`, 'info');
                 
                 try {
-                    // Method 2: Web Audio API approach
-                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    // Method 2: HTML5 Audio element with proper blob handling
+                    const playbackBlob = new Blob([audioArrayBuffer], { type: 'audio/wav' });
+                    const audioUrl = URL.createObjectURL(playbackBlob);
+                    const audio = new Audio();
                     
-                    audioContext.decodeAudioData(audioArrayBuffer.slice()).then(audioBuffer => {
-                        const source = audioContext.createBufferSource();
-                        source.buffer = audioBuffer;
-                        source.connect(audioContext.destination);
-                        
-                        source.onended = () => {
-                            this.addLogEntry(`🎵 Web Audio API playback completed`, 'success');
-                            audioContext.close();
-                        };
-                        
-                        source.start(0);
-                        this.addLogEntry(`🎵 Web Audio API playback started - Total pipeline: ${totalLatency}ms`, 'success');
-                        this.updateStatus('Translation complete! Audio playing via Web Audio API...', 'ready');
-                        
-                    }).catch(decodeError => {
-                        this.addLogEntry(`❌ Web Audio API decode failed: ${decodeError.message}`, 'error');
-                        this.addLogEntry(`❌ All audio playback methods failed`, 'error');
-                        this.updateStatus('Audio playback failed: Incompatible format', 'error');
-                        audioContext.close();
+                    // Set audio properties for better compatibility
+                    audio.preload = 'auto';
+                    
+                    // Add comprehensive event listeners
+                    audio.addEventListener('loadstart', () => {
+                        this.addLogEntry(`🔄 HTML5 Audio loading started (${Math.round(audioArrayBuffer.byteLength/1024)}KB WAV)`, 'info');
                     });
                     
-                } catch (webAudioError) {
-                    this.addLogEntry(`❌ Web Audio API not available: ${webAudioError.message}`, 'error');
+                    audio.addEventListener('canplay', () => {
+                        this.addLogEntry(`✅ HTML5 Audio ready to play`, 'success');
+                    });
+                    
+                    audio.addEventListener('loadeddata', () => {
+                        this.addLogEntry(`📥 HTML5 Audio data loaded successfully`, 'success');
+                    });
+                    
+                    audio.addEventListener('error', (e) => {
+                        const errorMsg = e.target.error?.message || 'Unknown audio error';
+                        this.addLogEntry(`❌ HTML5 Audio error: ${errorMsg}`, 'error');
+                        this.addLogEntry(`❌ All audio playback methods failed`, 'error');
+                        this.updateStatus('Audio playback failed: ' + errorMsg, 'error');
+                        URL.revokeObjectURL(audioUrl);
+                    });
+                    
+                    audio.addEventListener('ended', () => {
+                        URL.revokeObjectURL(audioUrl);
+                        this.addLogEntry(`🎵 HTML5 Audio playback completed`, 'success');
+                    });
+                    
+                    audio.src = audioUrl;
+                    
+                    audio.play().then(() => {
+                        this.addLogEntry(`🎵 HTML5 Audio playback started - Total pipeline: ${totalLatency}ms`, 'success');
+                        this.updateStatus('Translation complete! Audio playing...', 'ready');
+                    }).catch(error => {
+                        this.addLogEntry(`❌ HTML5 Audio play() failed: ${error.message}`, 'error');
+                        this.addLogEntry(`❌ All audio playback methods failed`, 'error');
+                        this.updateStatus('Audio playback failed: ' + error.message, 'error');
+                        URL.revokeObjectURL(audioUrl);
+                    });
+                    
+                } catch (error) {
+                    this.addLogEntry(`❌ HTML5 Audio setup failed: ${error.message}`, 'error');
                     this.addLogEntry(`❌ All audio playback methods failed`, 'error');
                     this.updateStatus('Audio playback failed: No compatible method', 'error');
                 }
