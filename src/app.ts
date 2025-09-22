@@ -167,7 +167,11 @@ app.get('/no-auth-demo', (req, res) => {
     'X-Public-Access': 'true',
     'X-Mobile-Safari-Bypass': 'true',
     'X-iOS-Bypass': 'true',
-    'Authorization': 'Bearer bypass-token'
+    'X-Chrome-Mobile-Bypass': 'true',
+    'X-Auth-Override': 'disabled',
+    'X-Tunnel-Override': 'public',
+    'Authorization': 'Bearer bypass-token',
+    'WWW-Authenticate': 'Bearer realm="bypass"'
   });
   
   logger.info('No-auth demo access:', {
@@ -354,7 +358,7 @@ async function performHealthChecks(): Promise<{ overall: string; services: any }
     
     const testBuffer = Buffer.alloc(1024);
     await deepgram.listen.prerecorded.transcribeFile(testBuffer, { 
-      model: 'nova-2',
+      model: 'nova-3',
       language: 'en-US'
     });
     
@@ -371,6 +375,19 @@ async function performHealthChecks(): Promise<{ overall: string; services: any }
     await translationService.translateText(uniqueText, 'en', 'ja', 'health-check');
     services.deepl.status = 'healthy';
     services.deepl.latency = Date.now() - start;
+  } catch (error) {
+    services.deepl.status = 'unhealthy';
+    services.deepl.error = (error as Error).message;
+  }
+
+  try {
+    const start = Date.now();
+    const uniqueText = `健康チェック-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    await translationService.translateText(uniqueText, 'ja', 'en', 'health-check-ja');
+    if (services.deepl.status !== 'healthy') {
+      services.deepl.status = 'healthy';
+      services.deepl.latency = Date.now() - start;
+    }
   } catch (error) {
     services.deepl.status = 'unhealthy';
     services.deepl.error = (error as Error).message;
@@ -406,7 +423,7 @@ async function processAudioToText(audioBuffer: Buffer, language: string, session
     const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
       audioBuffer,
       {
-        model: 'nova-2',
+        model: 'nova-3',
         language: language === 'ja' ? 'ja' : 'en-US',
         smart_format: true,
         punctuate: true,

@@ -24,6 +24,12 @@ export class STTService {
         keep_alive: true,
       });
 
+      logger.info(`Starting STT for session ${sessionId}:`, {
+        sourceLanguage,
+        deepgramLanguage: sourceLanguage === 'ja' ? 'ja' : 'en-US',
+        model: config.services.deepgram.model
+      });
+
       connection.on(LiveTranscriptionEvents.Open, () => {
         logger.info(`STT connection opened for session ${sessionId}`);
       });
