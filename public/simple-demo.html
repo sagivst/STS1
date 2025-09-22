@@ -101,6 +101,63 @@
             text-align: center;
             border-left: 5px solid #f39c12;
         }
+        
+        .services-status {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            border-left: 5px solid #3498db;
+        }
+        
+        .service-indicators {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        
+        .service-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            font-size: 0.9em;
+        }
+        
+        .service-name {
+            font-weight: bold;
+            min-width: 140px;
+        }
+        
+        .service-status {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        
+        .service-status.healthy {
+            background: rgba(46, 213, 115, 0.8);
+            color: white;
+        }
+        
+        .service-status.unhealthy {
+            background: rgba(231, 76, 60, 0.8);
+            color: white;
+        }
+        
+        .service-status.checking {
+            background: rgba(255, 165, 2, 0.8);
+            color: white;
+        }
+        
+        .service-latency {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.7);
+        }
     </style>
 </head>
 <body>
@@ -143,6 +200,27 @@
         <div class="latency-info">
             <div id="latencyInfo">🕐 Round-trip latency: -- ms<br>Waiting for first recording...</div>
         </div>
+        
+        <div class="services-status" id="servicesStatus">
+            <h4 style="margin: 0 0 10px 0; font-size: 1em;">🔧 External Services Status</h4>
+            <div class="service-indicators">
+                <div class="service-indicator" id="deepgramStatus">
+                    <span class="service-name">Deepgram STT:</span>
+                    <span class="service-status checking">Checking...</span>
+                    <span class="service-latency"></span>
+                </div>
+                <div class="service-indicator" id="deeplStatus">
+                    <span class="service-name">DeepL Translation:</span>
+                    <span class="service-status checking">Checking...</span>
+                    <span class="service-latency"></span>
+                </div>
+                <div class="service-indicator" id="azureStatus">
+                    <span class="service-name">Azure Speech TTS:</span>
+                    <span class="service-status checking">Checking...</span>
+                    <span class="service-latency"></span>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -156,6 +234,7 @@
                 this.initializeElements();
                 this.setupEventListeners();
                 this.updateLanguageOptions();
+                this.checkServiceStatus();
             }
             
             initializeElements() {
@@ -333,6 +412,36 @@
             updateStatus(message, type) {
                 this.status.textContent = message;
                 this.status.className = `status ${type}`;
+            }
+            
+            async checkServiceStatus() {
+                try {
+                    const response = await fetch(`${window.location.origin}/health`);
+                    const health = await response.json();
+                    
+                    this.updateServiceStatus('deepgram', health.services.deepgram);
+                    this.updateServiceStatus('deepl', health.services.deepl);
+                    this.updateServiceStatus('azure', health.services.azure);
+                    
+                    setTimeout(() => this.checkServiceStatus(), 30000);
+                } catch (error) {
+                    console.error('Failed to check service status:', error);
+                    setTimeout(() => this.checkServiceStatus(), 30000);
+                }
+            }
+            
+            updateServiceStatus(serviceName, serviceData) {
+                const statusEl = document.querySelector(`#${serviceName}Status .service-status`);
+                const latencyEl = document.querySelector(`#${serviceName}Status .service-latency`);
+                
+                if (statusEl) {
+                    statusEl.textContent = serviceData.status === 'healthy' ? '✅ Online' : '❌ Offline';
+                    statusEl.className = `service-status ${serviceData.status}`;
+                }
+                
+                if (latencyEl && serviceData.latency) {
+                    latencyEl.textContent = `(${serviceData.latency}ms)`;
+                }
             }
         }
         

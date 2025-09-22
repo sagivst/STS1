@@ -43,7 +43,7 @@ export class TTSService {
 
       const voice = this.selectVoice(language);
       this.speechConfig.speechSynthesisVoiceName = voice;
-      this.speechConfig.speechSynthesisOutputFormat = sdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3;
+      this.speechConfig.speechSynthesisOutputFormat = sdk.SpeechSynthesisOutputFormat.Riff16Khz16BitMonoPcm;
       
       logger.debug(`Starting TTS synthesis for session ${sessionId}:`, {
         language,
@@ -65,7 +65,7 @@ export class TTSService {
               const latency = Date.now() - startTime;
               const ttsResult: TTSResult = {
                 audioData,
-                format: 'mp3',
+                format: 'wav',
                 duration: this.estimateAudioDuration(audioData.length),
                 timestamp: Date.now(),
               };

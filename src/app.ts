@@ -77,12 +77,15 @@ app.get('/demo', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/simple-demo.html'));
 });
 
-app.get('/health', optionalAuthentication, (req, res) => {
+app.get('/health', optionalAuthentication, async (req, res) => {
+  const healthChecks = await performHealthChecks();
+  
   res.json({
-    status: 'healthy',
+    status: healthChecks.overall,
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
     activeSessions: sessionManager.getActiveSessionCount(),
+    services: healthChecks.services,
   });
 });
 
@@ -208,7 +211,7 @@ app.post('/api/tts', optionalAuthentication, async (req, res) => {
     );
     
     res.set({
-      'Content-Type': 'audio/mpeg',
+      'Content-Type': 'audio/wav',
       'Content-Length': result.audioData.length.toString(),
     });
     
@@ -222,6 +225,57 @@ app.post('/api/tts', optionalAuthentication, async (req, res) => {
     });
   }
 });
+
+async function performHealthChecks(): Promise<{ overall: string; services: any }> {
+  const services = {
+    deepgram: { status: 'unknown', latency: 0, error: null as string | null },
+    deepl: { status: 'unknown', latency: 0, error: null as string | null },
+    azure: { status: 'unknown', latency: 0, error: null as string | null },
+  };
+
+  try {
+    const start = Date.now();
+    const { createClient } = require('@deepgram/sdk');
+    const deepgram = createClient(config.services.deepgram.apiKey);
+    
+    const testBuffer = Buffer.alloc(1024);
+    await deepgram.listen.prerecorded.transcribeFile(testBuffer, { 
+      model: 'nova-2',
+      language: 'en-US'
+    });
+    
+    services.deepgram.status = 'healthy';
+    services.deepgram.latency = Date.now() - start;
+  } catch (error) {
+    services.deepgram.status = 'unhealthy';
+    services.deepgram.error = (error as Error).message;
+  }
+
+  try {
+    const start = Date.now();
+    await translationService.translateText('test', 'en', 'ja', 'health-check');
+    services.deepl.status = 'healthy';
+    services.deepl.latency = Date.now() - start;
+  } catch (error) {
+    services.deepl.status = 'unhealthy';
+    services.deepl.error = (error as Error).message;
+  }
+
+  try {
+    const start = Date.now();
+    await ttsService.synthesizeSpeech('test', 'en', 'health-check');
+    services.azure.status = 'healthy';
+    services.azure.latency = Date.now() - start;
+  } catch (error) {
+    services.azure.status = 'unhealthy';
+    services.azure.error = (error as Error).message;
+  }
+
+  const allHealthy = Object.values(services).every(service => service.status === 'healthy');
+  const overall = allHealthy ? 'healthy' : 'degraded';
+
+  return { overall, services };
+}
 
 async function processAudioToText(audioBuffer: Buffer, language: string, sessionId: string): Promise<{ transcript: string; confidence: number }> {
   try {
