@@ -305,8 +305,8 @@
                     const audioArrayBuffer = await ttsResponse.arrayBuffer();
                     
                     // Play the audio
-                    const audioBlob = new Blob([audioArrayBuffer], { type: 'audio/wav' });
-                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const playbackBlob = new Blob([audioArrayBuffer], { type: 'audio/wav' });
+                    const audioUrl = URL.createObjectURL(playbackBlob);
                     const audio = new Audio(audioUrl);
                     
                     audio.play().then(() => {
