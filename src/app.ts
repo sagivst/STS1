@@ -62,6 +62,7 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(express.static(path.join(__dirname, '../public')));
 
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -117,11 +118,53 @@ app.get('/public-demo', (req, res) => {
     'X-Frame-Options': 'SAMEORIGIN',
     'X-Content-Type-Options': 'nosniff',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, DELETE',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+    'Access-Control-Allow-Credentials': 'false',
+    'X-Public-Demo': 'true',
+    'X-Bypass-Auth': 'public-demo',
+    'X-Mobile-Friendly': 'true'
   });
   
   logger.info('Public demo access:', {
+    userAgent: req.headers['user-agent'],
+    origin: req.headers['origin'],
+    host: req.headers['host'],
+    ip: req.ip,
+    isMobile: /Mobile|Android|iPhone|iPad/.test(req.headers['user-agent'] || '')
+  });
+  
+  res.sendFile(path.join(__dirname, '../public/simple-demo.html'));
+});
+
+app.options('/public-demo', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, DELETE',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+    'Access-Control-Allow-Credentials': 'false'
+  });
+  res.status(200).end();
+});
+
+app.get('/no-auth-demo', (req, res) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'X-Frame-Options': 'DENY',
+    'X-Content-Type-Options': 'nosniff',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, DELETE',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+    'Access-Control-Allow-Credentials': 'false',
+    'X-No-Auth': 'true',
+    'X-Mobile-Access': 'enabled',
+    'X-Mobile-Bypass': 'true',
+    'X-Tunnel-Auth': 'bypass'
+  });
+  
+  logger.info('No-auth demo access:', {
     userAgent: req.headers['user-agent'],
     origin: req.headers['origin'],
     host: req.headers['host'],

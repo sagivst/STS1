@@ -597,7 +597,7 @@
                         this.addLogEntry(`✅ Translation: "${message.data.translatedText}"`, 'translation');
                         break;
                     case 'audio':
-                        // Calculate and display streaming latency
+                        // Calculate and display streaming latency using recording start time
                         if (this.recordingStartTime) {
                             const totalLatency = Date.now() - this.recordingStartTime;
                             const latencySeconds = (totalLatency / 1000).toFixed(2);
@@ -615,6 +615,9 @@
                     case 'error':
                         this.addLogEntry(`❌ Error: ${message.data.message}`, 'error');
                         break;
+                    case 'streaming_stopped':
+                        this.addLogEntry(`⏹️ Streaming translation stopped for session ${message.sessionId}`, 'info');
+                        break;
                 }
             }
             
@@ -622,10 +625,12 @@
                 try {
                     this.addLogEntry(`🔊 AudioContext initialized for streaming: ${this.audioContext ? this.audioContext.state : 'none'}`, 'info');
                     
-                    if (!this.audioContext) {
+                    // Initialize AudioContext if needed or if closed
+                    if (!this.audioContext || this.audioContext.state === 'closed') {
                         this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                     }
                     
+                    // Resume AudioContext if suspended
                     if (this.audioContext.state === 'suspended') {
                         await this.audioContext.resume();
                     }
@@ -638,7 +643,9 @@
                     }
                     
                     this.addLogEntry('🔊 Playing translated audio', 'info');
-                    const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+                    
+                    // Decode audio buffer with slice() to avoid detached buffer issues
+                    const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer.slice());
                     const source = this.audioContext.createBufferSource();
                     source.buffer = audioBuffer;
                     
@@ -652,7 +659,7 @@
                     const speakerLevelInterval = setInterval(() => {
                         analyser.getByteFrequencyData(dataArray);
                         const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-                        const percentage = Math.min(100, (average / 128) * 100);
+                        const percentage = Math.min(100, (average / 255) * 100);
                         this.speakerLevel.style.width = percentage + '%';
                     }, 100);
                     
@@ -666,8 +673,57 @@
                     };
                     
                 } catch (error) {
-                    this.addLogEntry(`❌ Audio playback error: ${error.message}`, 'error');
-                    console.error('Audio playback error:', error);
+                    this.addLogEntry(`❌ Web Audio API failed: ${error.message}`, 'error');
+                    console.error('Web Audio API error:', error);
+                    // Fallback to HTML5 Audio
+                    this.fallbackToHtml5Audio(base64AudioData, format);
+                }
+            }
+            
+            fallbackToHtml5Audio(base64AudioData, format) {
+                try {
+                    this.addLogEntry(`🔄 Trying HTML5 Audio fallback...`, 'info');
+                    
+                    // Convert base64 to blob
+                    const audioData = atob(base64AudioData);
+                    const arrayBuffer = new ArrayBuffer(audioData.length);
+                    const view = new Uint8Array(arrayBuffer);
+                    for (let i = 0; i < audioData.length; i++) {
+                        view[i] = audioData.charCodeAt(i);
+                    }
+                    
+                    const blob = new Blob([arrayBuffer], { type: 'audio/wav' });
+                    const audioUrl = URL.createObjectURL(blob);
+                    const audio = new Audio();
+                    
+                    audio.preload = 'auto';
+                    
+                    audio.addEventListener('canplay', () => {
+                        this.addLogEntry(`✅ HTML5 Audio ready to play`, 'success');
+                    });
+                    
+                    audio.addEventListener('ended', () => {
+                        URL.revokeObjectURL(audioUrl);
+                        this.addLogEntry(`🎵 HTML5 Audio playback completed`, 'success');
+                    });
+                    
+                    audio.addEventListener('error', (e) => {
+                        const errorMsg = e.target.error?.message || 'Unknown audio error';
+                        this.addLogEntry(`❌ HTML5 Audio error: ${errorMsg}`, 'error');
+                        URL.revokeObjectURL(audioUrl);
+                    });
+                    
+                    audio.src = audioUrl;
+                    
+                    audio.play().then(() => {
+                        this.addLogEntry(`🎵 HTML5 Audio playback started`, 'success');
+                    }).catch(error => {
+                        this.addLogEntry(`❌ HTML5 Audio play() failed: ${error.message}`, 'error');
+                        URL.revokeObjectURL(audioUrl);
+                    });
+                    
+                } catch (error) {
+                    this.addLogEntry(`❌ HTML5 Audio fallback failed: ${error.message}`, 'error');
                 }
             }
             
@@ -739,7 +795,7 @@
                         }
                     });
                     
-                    // Generate a new sessionId for each recording session
+                    // Generate a new unique sessionId for each recording session
                     this.currentRecordingSessionId = `demo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
                     this.recordingStartTime = Date.now();
                     
@@ -756,17 +812,18 @@
                     this.micLevelInterval = setInterval(() => {
                         analyser.getByteFrequencyData(dataArray);
                         const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-                        const percentage = Math.min(100, (average / 128) * 100);
+                        const percentage = Math.min(100, (average / 255) * 100);
                         this.micLevel.style.width = percentage + '%';
                     }, 100);
                     
                     if (this.isStreamingMode && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                        // Streaming mode
+                        // Use the unique sessionId generated above for consistency
+                        
                         this.mediaRecorder = new MediaRecorder(stream, {
                             mimeType: 'audio/webm;codecs=opus'
                         });
                         
-                        this.startTime = Date.now();
+                        this.recordingStartTime = Date.now();
                         
                         // Start streaming translation
                         this.ws.send(JSON.stringify({
@@ -851,7 +908,7 @@
                         this.micLevelInterval = null;
                     }
                     
-                    if (this.isStreamingMode && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    if (this.isStreamingMode && this.ws && this.ws.readyState === WebSocket.OPEN && this.currentRecordingSessionId) {
                         // Stop streaming translation
                         this.ws.send(JSON.stringify({
                             type: 'stop_streaming',
@@ -869,6 +926,15 @@
                         this.updateStatus('Processing...', 'processing');
                         this.addLogEntry('⏹️ Stopped recording', 'info');
                     }
+                    
+                    // Clean up audio level monitoring
+                    if (this.micLevelInterval) {
+                        clearInterval(this.micLevelInterval);
+                        this.micLevel.style.width = '0%';
+                        this.micLevelInterval = null;
+                    }
+                    
+                    // Keep AudioContext alive for audio playback - don't close immediately
                 }
             }
             

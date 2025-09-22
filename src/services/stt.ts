@@ -10,6 +10,10 @@ export class STTService {
 
   async startTranscription(sessionId: string, sourceLanguage: string, onTranscript: (result: STTResult) => void): Promise<void> {
     try {
+      if (this.activeConnections.has(sessionId)) {
+        logger.warn(`Cleaning up existing STT connection for session ${sessionId}`);
+        this.stopTranscription(sessionId);
+      }
       const connection = this.deepgram.listen.live({
         model: config.services.deepgram.model,
         language: sourceLanguage === 'ja' ? 'ja' : 'en-US',
@@ -17,6 +21,7 @@ export class STTService {
         interim_results: true,
         endpointing: 300,
         utterance_end_ms: 1000,
+        keep_alive: true,
       });
 
       connection.on(LiveTranscriptionEvents.Open, () => {
@@ -58,6 +63,7 @@ export class STTService {
       
     } catch (error) {
       logger.error(`Failed to start STT for session ${sessionId}:`, error);
+      this.activeConnections.delete(sessionId);
       throw new ServiceError('STT_INIT_ERROR', 'Failed to initialize speech recognition', 500);
     }
   }
@@ -65,14 +71,20 @@ export class STTService {
   sendAudio(sessionId: string, audioData: Buffer): void {
     const connection = this.activeConnections.get(sessionId);
     if (!connection) {
-      throw new ServiceError('STT_NO_CONNECTION', 'No active STT connection for session', 400);
+      logger.error(`No active STT connection for session ${sessionId}. Active sessions: ${Array.from(this.activeConnections.keys()).join(', ')}`);
+      return;
     }
 
     try {
-      connection.send(audioData);
+      if (connection.getReadyState && connection.getReadyState() === 1) {
+        connection.send(audioData);
+        logger.debug(`Sent ${audioData.length} bytes to STT for session ${sessionId}`);
+      } else {
+        logger.warn(`STT connection not ready for session ${sessionId}, state: ${connection.getReadyState ? connection.getReadyState() : 'unknown'}`);
+      }
     } catch (error) {
       logger.error(`Failed to send audio for session ${sessionId}:`, error);
-      throw new ServiceError('STT_SEND_ERROR', 'Failed to send audio data', 500);
+      this.activeConnections.delete(sessionId);
     }
   }
 
@@ -86,6 +98,8 @@ export class STTService {
       } catch (error) {
         logger.error(`Error stopping STT for session ${sessionId}:`, error);
       }
+    } else {
+      logger.warn(`No active STT connection to stop for session ${sessionId}. Active sessions: ${Array.from(this.activeConnections.keys()).join(', ')}`);
     }
   }
 
