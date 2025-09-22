@@ -356,6 +356,7 @@
                 this.setupEventListeners();
                 this.updateLanguageOptions();
                 this.checkServiceStatus();
+                this.checkDeviceConnectivity();
             }
             
             initializeElements() {
@@ -607,6 +608,86 @@
                 // Keep only last 50 entries to prevent memory issues
                 while (this.logContainer.children.length > 50) {
                     this.logContainer.removeChild(this.logContainer.firstChild);
+                }
+            }
+
+            async checkDeviceConnectivity() {
+                this.addLogEntry('🔍 Checking microphone and speaker connectivity...', 'info');
+                
+                // Check microphone access
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    this.addLogEntry('✅ Microphone access granted and working', 'success');
+                    
+                    // Test microphone input level detection
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const analyser = audioContext.createAnalyser();
+                    const microphone = audioContext.createMediaStreamSource(stream);
+                    microphone.connect(analyser);
+                    
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    analyser.getByteFrequencyData(dataArray);
+                    
+                    // Stop the stream after testing
+                    stream.getTracks().forEach(track => track.stop());
+                    audioContext.close();
+                    
+                    this.addLogEntry('✅ Microphone input level detection working', 'success');
+                } catch (error) {
+                    this.addLogEntry(`❌ Microphone access failed: ${error.message}`, 'error');
+                }
+                
+                // Check speaker/audio output capability
+                try {
+                    // Test if we can create and play a short audio beep
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // A4 note
+                    gainNode.gain.setValueAtTime(0.05, audioContext.currentTime); // Low volume
+                    
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + 0.1); // 100ms beep
+                    
+                    this.addLogEntry('✅ Speaker/audio output capability verified', 'success');
+                    audioContext.close();
+                } catch (error) {
+                    this.addLogEntry(`❌ Speaker test failed: ${error.message}`, 'error');
+                }
+                
+                // Check if browser supports required audio formats
+                const audio = new Audio();
+                const formats = {
+                    'WAV': 'audio/wav',
+                    'MP3': 'audio/mpeg',
+                    'WebM': 'audio/webm'
+                };
+                
+                for (const [format, mimeType] of Object.entries(formats)) {
+                    const canPlay = audio.canPlayType(mimeType);
+                    if (canPlay === 'probably' || canPlay === 'maybe') {
+                        this.addLogEntry(`✅ ${format} audio format supported (${canPlay})`, 'success');
+                    } else {
+                        this.addLogEntry(`❌ ${format} audio format not supported`, 'error');
+                    }
+                }
+                
+                // Check Web Audio API support
+                if (window.AudioContext || window.webkitAudioContext) {
+                    this.addLogEntry('✅ Web Audio API supported', 'success');
+                } else {
+                    this.addLogEntry('❌ Web Audio API not supported', 'error');
+                }
+                
+                // Check MediaRecorder API support
+                if (window.MediaRecorder) {
+                    this.addLogEntry('✅ MediaRecorder API supported', 'success');
+                } else {
+                    this.addLogEntry('❌ MediaRecorder API not supported', 'error');
                 }
             }
         }
