@@ -4,6 +4,9 @@ import { app } from './app';
 import { config } from './config/environment';
 import { logger } from './utils/logger';
 import { cacheManager } from './utils/cache';
+import { sttService } from './services/stt';
+import { translationService } from './services/translation';
+import { ttsService } from './services/tts';
 
 class TranslationServer {
   private server = createServer(app);
@@ -16,22 +19,118 @@ class TranslationServer {
 
   private setupWebSocketServer(): void {
     this.wss.on('connection', (ws: WebSocket) => {
-      logger.info('WebSocket connection established');
+      const sessionId = `ws-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      logger.info(`WebSocket connection established for session ${sessionId}`);
       
-      ws.on('message', (data: Buffer) => {
-        logger.debug('Received WebSocket message', { size: data.length });
+      let isStreamingActive = false;
+      let sourceLanguage = 'en';
+      let targetLanguage = 'ja';
+
+      ws.on('message', async (data: Buffer) => {
+        try {
+          const message = JSON.parse(data.toString());
+          logger.debug(`WebSocket message received for session ${sessionId}:`, message);
+          
+          if (message.type === 'start_streaming') {
+            isStreamingActive = true;
+            sourceLanguage = message.data.sourceLanguage;
+            targetLanguage = message.data.targetLanguage;
+            
+            logger.info(`Starting streaming translation for session ${sessionId}: ${sourceLanguage} → ${targetLanguage}`);
+            
+            await sttService.startTranscription(sessionId, (sttResult) => {
+              if (sttResult.isFinal && sttResult.transcript.trim()) {
+                this.handleStreamingTranslation(ws, sttResult, sourceLanguage, targetLanguage, sessionId);
+              }
+              
+              ws.send(JSON.stringify({
+                type: 'transcript',
+                sessionId,
+                data: sttResult,
+                timestamp: Date.now()
+              }));
+            });
+            
+          } else if (message.type === 'audio_chunk' && isStreamingActive) {
+            const audioBuffer = Buffer.from(message.data.audioData, 'base64');
+            sttService.sendAudio(sessionId, audioBuffer);
+            
+          } else if (message.type === 'stop_streaming') {
+            isStreamingActive = false;
+            sttService.stopTranscription(sessionId);
+            logger.info(`Stopped streaming translation for session ${sessionId}`);
+          }
+          
+        } catch (error) {
+          logger.error(`WebSocket message error for session ${sessionId}:`, error);
+          ws.send(JSON.stringify({
+            type: 'error',
+            sessionId,
+            data: { message: (error as Error).message },
+            timestamp: Date.now()
+          }));
+        }
       });
 
       ws.on('close', () => {
-        logger.info('WebSocket connection closed');
+        if (isStreamingActive) {
+          sttService.stopTranscription(sessionId);
+        }
+        logger.info(`WebSocket connection closed for session ${sessionId}`);
       });
 
       ws.on('error', (error) => {
-        logger.error('WebSocket error:', error);
+        if (isStreamingActive) {
+          sttService.stopTranscription(sessionId);
+        }
+        logger.error(`WebSocket error for session ${sessionId}:`, error);
       });
     });
 
     logger.info('WebSocket server initialized');
+  }
+
+  private async handleStreamingTranslation(ws: WebSocket, sttResult: any, sourceLanguage: string, targetLanguage: string, sessionId: string) {
+    try {
+      const translationResult = await translationService.translateText(
+        sttResult.transcript,
+        sourceLanguage as 'en' | 'ja',
+        targetLanguage as 'en' | 'ja',
+        sessionId
+      );
+      
+      ws.send(JSON.stringify({
+        type: 'translation',
+        sessionId,
+        data: translationResult,
+        timestamp: Date.now()
+      }));
+      
+      const ttsResult = await ttsService.synthesizeSpeech(
+        translationResult.translatedText,
+        targetLanguage as 'en' | 'ja',
+        sessionId
+      );
+      
+      ws.send(JSON.stringify({
+        type: 'audio',
+        sessionId,
+        data: {
+          audioData: ttsResult.audioData.toString('base64'),
+          format: ttsResult.format
+        },
+        timestamp: Date.now()
+      }));
+      
+    } catch (error) {
+      logger.error(`Streaming translation error for session ${sessionId}:`, error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        sessionId,
+        data: { message: (error as Error).message },
+        timestamp: Date.now()
+      }));
+    }
   }
 
   private setupGracefulShutdown(): void {

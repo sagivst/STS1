@@ -44,8 +44,8 @@ export class TranslationService {
 
       const startTime = Date.now();
       
-      const deeplSourceLang = this.mapLanguageCode(sourceLanguage);
-      const deeplTargetLang = this.mapLanguageCode(targetLanguage);
+      const deeplSourceLang = sourceLanguage === 'en' ? 'en' : 'ja';
+      const deeplTargetLang = targetLanguage === 'en' ? 'en-US' : 'ja';
 
       const result = await this.translator.translateText(
         text,
@@ -101,12 +101,12 @@ export class TranslationService {
     }
   }
 
-  private mapLanguageCode(language: 'en' | 'ja'): deepl.SourceLanguageCode | deepl.TargetLanguageCode {
-    const languageMap: Record<string, deepl.SourceLanguageCode | deepl.TargetLanguageCode> = {
-      'en': 'en' as deepl.SourceLanguageCode,
-      'ja': 'ja' as deepl.SourceLanguageCode,
+  private mapLanguageCode(language: 'en' | 'ja'): string {
+    const languageMap: Record<string, string> = {
+      'en': 'en',  // Use 'en' instead of 'en-US' for source language
+      'ja': 'ja',
     };
-    return languageMap[language];
+    return languageMap[language] || language;
   }
 
   private calculateConfidence(result: deepl.TextResult): number {

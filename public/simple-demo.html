@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Japanese → English Real-time Translation Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 100%;
+            margin: 0;
+            padding: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        
+        /* Mobile-first responsive design */
+        @media (min-width: 768px) {
+            body {
+                max-width: 600px;
+                margin: 20px auto;
+                padding: 20px;
+            }
+        }
+        
+        /* Ensure content doesn't overflow on small screens */
+        @media (max-width: 480px) {
+            body {
+                padding: 5px;
+                font-size: 14px;
+            }
+            
+            h1 {
+                font-size: 1.2em;
+                margin-bottom: 10px;
+            }
+            
+            .demo-container {
+                padding: 10px;
+                margin: 5px;
+            }
+            
+            select {
+                padding: 8px 10px;
+                font-size: 14px;
+                max-width: 120px;
+            }
+            
+            .record-button {
+                padding: 12px 20px;
+                font-size: 14px;
+                max-width: 200px;
+            }
+            
+            .status-section, .operation-log {
+                margin: 10px 0;
+                padding: 10px;
+            }
+            
+            .log-container {
+                max-height: 150px;
+                font-size: 12px;
+            }
+        }
+        .demo-container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-height: none;
+            overflow: visible;
+        }
+        
+        @media (min-width: 768px) {
+            .demo-container {
+                padding: 40px;
+                border-radius: 20px;
+            }
+        }
+        h1 {
+            margin-bottom: 15px;
+            font-size: 1.5em;
+            line-height: 1.2;
+        }
+        
+        @media (min-width: 768px) {
+            h1 {
+                margin-bottom: 30px;
+                font-size: 2.2em;
+            }
+        }
+        .language-selector {
+            margin: 20px 0;
+        }
+        
+        @media (min-width: 768px) {
+            .language-selector {
+                margin: 30px 0;
+            }
+        }
+        select {
+            padding: 10px 15px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            background: white;
+            color: #333;
+            margin: 5px;
+            max-width: 140px;
+        }
+        
+        @media (min-width: 768px) {
+            select {
+                padding: 15px 20px;
+                font-size: 18px;
+                border-radius: 10px;
+                margin: 0 10px;
+                max-width: none;
+            }
+        }
+        .record-button {
+            background: #ff4757;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 25px;
+            cursor: pointer;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4);
+            width: 100%;
+            max-width: 250px;
+            min-height: 50px;
+        }
+        
+        @media (min-width: 768px) {
+            .record-button {
+                padding: 20px 40px;
+                font-size: 20px;
+                border-radius: 50px;
+                margin: 30px 0;
+                width: auto;
+                max-width: none;
+            }
+        }
+        .record-button:hover {
+            background: #ff3742;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 71, 87, 0.6);
+        }
+        .record-button.recording {
+            background: #ffa502;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: bold;
+            min-height: 20px;
+        }
+        .status.ready { background: rgba(46, 213, 115, 0.3); }
+        .status.recording { background: rgba(255, 165, 2, 0.3); }
+        .status.processing { background: rgba(52, 152, 219, 0.3); }
+        .status.error { background: rgba(231, 76, 60, 0.3); }
+        .transcript-box {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            border-radius: 15px;
+            margin: 20px 0;
+            min-height: 60px;
+            border-left: 5px solid #3498db;
+        }
+        .translation-box {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            border-radius: 15px;
+            margin: 20px 0;
+            min-height: 60px;
+            border-left: 5px solid #2ecc71;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        .latency-info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            font-size: 1em;
+            text-align: center;
+            border-left: 5px solid #f39c12;
+        }
+        
+        .services-status {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            border-left: 5px solid #3498db;
+        }
+        
+        .service-indicators {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 10px;
+        }
+        
+        @media (min-width: 768px) {
+            .service-indicators {
+                gap: 8px;
+            }
+        }
+        
+        .service-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            font-size: 0.8em;
+        }
+        
+        @media (min-width: 768px) {
+            .service-indicator {
+                gap: 10px;
+                padding: 8px;
+                font-size: 0.9em;
+            }
+        }
+        
+        .service-name {
+            font-weight: bold;
+            min-width: 100px;
+            flex-shrink: 0;
+        }
+        
+        @media (min-width: 768px) {
+            .service-name {
+                min-width: 140px;
+            }
+        }
+        
+        .service-status {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        
+        .service-status.healthy {
+            background: rgba(46, 213, 115, 0.8);
+            color: white;
+        }
+        
+        .service-status.unhealthy {
+            background: rgba(231, 76, 60, 0.8);
+            color: white;
+        }
+        
+        .service-status.checking {
+            background: rgba(255, 165, 2, 0.8);
+            color: white;
+        }
+        
+        .service-latency {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .operation-log {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 12px;
+            border-radius: 10px;
+            margin: 10px 0;
+            border-left: 5px solid #17a2b8;
+        }
+
+        .operation-log h4 {
+            margin: 0 0 8px 0;
+            font-size: 0.9em;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .log-container {
+            background-color: #1a202c;
+            color: #e2e8f0;
+            padding: 6px;
+            border-radius: 6px;
+            max-height: 100px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            line-height: 1.2;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        @media (min-width: 768px) {
+            .log-container {
+                padding: 8px;
+                max-height: 120px;
+                font-size: 11px;
+                line-height: 1.3;
+            }
+        }
+
+        .log-entry {
+            margin-bottom: 2px;
+            word-wrap: break-word;
+        }
+
+        .log-timestamp {
+            color: #90cdf4;
+            font-weight: bold;
+        }
+
+        .log-message {
+            margin-left: 6px;
+        }
+
+        .log-entry.stt {
+            color: #68d391;
+        }
+
+        .log-entry.translation {
+            color: #fbb6ce;
+        }
+
+        .log-entry.tts {
+            color: #fbd38d;
+        }
+
+        .log-entry.error {
+            color: #fc8181;
+        }
+
+        .log-entry.success {
+            color: #9ae6b4;
+        }
+
+        .log-entry.info {
+            color: #a0aec0;
+        }
+
+        /* Remove conflicting compact layout rules */
+        .demo-container p {
+            margin: 0 0 10px 0;
+            font-size: 0.85em;
+        }
+        
+        @media (min-width: 768px) {
+            .demo-container p {
+                font-size: 0.9em;
+            }
+        }
+
+
+        .transcript-box, .translation-box {
+            padding: 8px;
+            margin: 6px 0;
+            min-height: 30px;
+        }
+        
+        @media (min-width: 768px) {
+            .transcript-box, .translation-box {
+                padding: 12px;
+                margin: 8px 0;
+                min-height: 40px;
+            }
+        }
+
+        .latency-info {
+            padding: 6px;
+            margin: 6px 0;
+            font-size: 0.8em;
+        }
+        
+        @media (min-width: 768px) {
+            .latency-info {
+                padding: 8px;
+                margin: 8px 0;
+                font-size: 0.9em;
+            }
+        }
+
+        .services-status {
+            padding: 8px;
+            margin: 6px 0;
+        }
+        
+        @media (min-width: 768px) {
+            .services-status {
+                padding: 10px;
+                margin: 8px 0;
+            }
+        }
+
+        .service-indicator {
+            padding: 4px;
+            font-size: 0.75em;
+        }
+        
+        @media (min-width: 768px) {
+            .service-indicator {
+                padding: 6px;
+                font-size: 0.85em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <h1>🎤 → 🔊 Real-time Translation Demo</h1>
+        <p style="text-align: center; color: #666; font-style: italic; margin-top: -10px;">Demo developed by Sagiv Stavinsky</p>
+        
+        <div class="language-selector">
+            <label>From:</label>
+            <select id="sourceLanguage">
+                <option value="ja">🇯🇵 Japanese</option>
+                <option value="en">🇺🇸 English</option>
+            </select>
+            
+            <label>To:</label>
+            <select id="targetLanguage">
+                <option value="en">🇺🇸 English</option>
+                <option value="ja">🇯🇵 Japanese</option>
+            </select>
+        </div>
+        
+        <div style="margin: 20px 0; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 10px;">
+            <strong>🔄 Bidirectional Translation:</strong><br>
+            Switch languages to test both Japanese → English and English → Japanese with real-time audio
+        </div>
+        
+        <button id="recordButton" class="record-button">🎤 start talking</button>
+        
+        <div id="status" class="status ready">Ready to record</div>
+        
+        <div class="transcript-box">
+            <strong>Original Speech:</strong>
+            <div id="transcript">Click record and speak...</div>
+        </div>
+        
+        <div class="translation-box">
+            <strong>Translation:</strong>
+            <div id="translation">Translation will appear here...</div>
+        </div>
+        
+        <div class="latency-info">
+            <div id="latencyInfo">🕐 Round-trip latency: -- ms<br>Waiting for first recording...</div>
+        </div>
+        
+        <div class="services-status" id="servicesStatus">
+            <h4 style="margin: 0 0 10px 0; font-size: 1em;">🔧 External Services Status</h4>
+            <div class="service-indicators">
+                <div class="service-indicator" id="deepgramStatus">
+                    <span class="service-name">Deepgram STT:</span>
+                    <span class="service-status checking">Checking...</span>
+                    <span class="service-latency"></span>
+                </div>
+                <div class="service-indicator" id="deeplStatus">
+                    <span class="service-name">DeepL Translation:</span>
+                    <span class="service-status checking">Checking...</span>
+                    <span class="service-latency"></span>
+                </div>
+                <div class="service-indicator" id="azureStatus">
+                    <span class="service-name">Azure Speech TTS:</span>
+                    <span class="service-status checking">Checking...</span>
+                    <span class="service-latency"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="operation-log" id="operationLog">
+            <h4>📋 Operation Log</h4>
+            <div class="log-container" id="logContainer">
+                <div class="log-entry">
+                    <span class="log-timestamp">[00:00:00]</span>
+                    <span class="log-message">System ready - waiting for first recording...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class SimpleTranslationDemo {
+            constructor() {
+                this.isRecording = false;
+                this.mediaRecorder = null;
+                this.audioChunks = [];
+                this.startTime = null;
+                this.audioContext = null;
+                this.operationStartTime = null;
+                this.ws = null;
+                this.sessionId = `demo-${Date.now()}`;
+                this.isStreamingMode = true;
+                
+                this.initializeElements();
+                this.setupEventListeners();
+                this.updateLanguageOptions();
+                this.checkServiceStatus();
+                this.checkDeviceConnectivity();
+                this.connectWebSocket();
+            }
+            
+            initializeElements() {
+                this.recordButton = document.getElementById('recordButton');
+                this.status = document.getElementById('status');
+                this.transcript = document.getElementById('transcript');
+                this.translation = document.getElementById('translation');
+                this.latencyInfo = document.getElementById('latencyInfo');
+                this.sourceLanguage = document.getElementById('sourceLanguage');
+                this.targetLanguage = document.getElementById('targetLanguage');
+                this.logContainer = document.getElementById('logContainer');
+            }
+            
+            setupEventListeners() {
+                this.recordButton.addEventListener('click', () => this.toggleRecording());
+                this.sourceLanguage.addEventListener('change', () => this.updateLanguageOptions());
+            }
+            
+            connectWebSocket() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}`;
+                
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    this.addLogEntry('🔗 WebSocket connected for streaming translation', 'success');
+                };
+                
+                this.ws.onmessage = (event) => {
+                    const message = JSON.parse(event.data);
+                    this.handleWebSocketMessage(message);
+                };
+                
+                this.ws.onclose = () => {
+                    this.addLogEntry('❌ WebSocket disconnected', 'error');
+                    // Attempt to reconnect after 3 seconds
+                    setTimeout(() => {
+                        this.addLogEntry('🔄 Attempting to reconnect WebSocket...', 'info');
+                        this.connectWebSocket();
+                    }, 3000);
+                };
+                
+                this.ws.onerror = (error) => {
+                    this.addLogEntry(`❌ WebSocket error: ${error.message}`, 'error');
+                };
+            }
+            
+            handleWebSocketMessage(message) {
+                switch (message.type) {
+                    case 'transcript':
+                        if (message.data.isFinal) {
+                            this.transcript.textContent = message.data.transcript;
+                            this.addLogEntry(`✅ STT: "${message.data.transcript}"`, 'stt');
+                        } else {
+                            // Show interim results with different styling
+                            this.transcript.innerHTML = `<span style="opacity: 0.7; font-style: italic;">${message.data.transcript}</span>`;
+                        }
+                        break;
+                    case 'translation':
+                        this.translation.textContent = message.data.translatedText;
+                        this.addLogEntry(`✅ Translation: "${message.data.translatedText}"`, 'translation');
+                        break;
+                    case 'audio':
+                        this.playAudio(message.data.audioData);
+                        this.addLogEntry('🔊 Playing translated audio', 'tts');
+                        break;
+                    case 'error':
+                        this.addLogEntry(`❌ Error: ${message.data.message}`, 'error');
+                        break;
+                }
+            }
+            
+            updateLanguageOptions() {
+                const source = this.sourceLanguage.value;
+                const target = this.targetLanguage;
+                
+                // Auto-switch target language
+                if (source === 'ja') {
+                    target.value = 'en';
+                } else {
+                    target.value = 'ja';
+                }
+            }
+            
+            async toggleRecording() {
+                if (this.isRecording) {
+                    this.stopRecording();
+                } else {
+                    await this.startRecording();
+                }
+            }
+            
+            async startRecording() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: {
+                            sampleRate: 16000,
+                            channelCount: 1,
+                            echoCancellation: true,
+                            noiseSuppression: true
+                        }
+                    });
+                    
+                    if (this.isStreamingMode && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        // Streaming mode
+                        this.mediaRecorder = new MediaRecorder(stream, {
+                            mimeType: 'audio/webm;codecs=opus'
+                        });
+                        
+                        this.startTime = Date.now();
+                        
+                        // Start streaming translation
+                        this.ws.send(JSON.stringify({
+                            type: 'start_streaming',
+                            sessionId: this.sessionId,
+                            data: {
+                                sourceLanguage: this.sourceLanguage.value,
+                                targetLanguage: this.targetLanguage.value
+                            },
+                            timestamp: Date.now()
+                        }));
+                        
+                        this.mediaRecorder.ondataavailable = (event) => {
+                            if (event.data.size > 0 && this.ws.readyState === WebSocket.OPEN) {
+                                // Convert audio chunk to base64 and send via WebSocket
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                    const audioData = reader.result.split(',')[1]; // Remove data:audio/webm;base64, prefix
+                                    this.ws.send(JSON.stringify({
+                                        type: 'audio_chunk',
+                                        sessionId: this.sessionId,
+                                        data: { audioData },
+                                        timestamp: Date.now()
+                                    }));
+                                };
+                                reader.readAsDataURL(event.data);
+                            }
+                        };
+                        
+                        this.mediaRecorder.start(100); // Send chunks every 100ms for real-time processing
+                        this.isRecording = true;
+                        
+                        this.recordButton.textContent = '⏹️ stop talking';
+                        this.recordButton.classList.add('recording');
+                        this.updateStatus('Recording and translating in real-time...', 'recording');
+                        this.addLogEntry('🎤 Started streaming translation', 'info');
+                        
+                    } else {
+                        // Fallback to batch mode if WebSocket not available
+                        this.mediaRecorder = new MediaRecorder(stream, {
+                            mimeType: 'audio/webm;codecs=opus'
+                        });
+                        
+                        this.audioChunks = [];
+                        this.startTime = Date.now();
+                        
+                        this.mediaRecorder.ondataavailable = (event) => {
+                            if (event.data.size > 0) {
+                                this.audioChunks.push(event.data);
+                            }
+                        };
+                        
+                        this.mediaRecorder.onstop = () => {
+                            this.processAudio();
+                        };
+                        
+                        this.mediaRecorder.start(1000);
+                        this.isRecording = true;
+                        
+                        this.recordButton.textContent = '⏹️ stop talking';
+                        this.recordButton.classList.add('recording');
+                        this.updateStatus('Recording...', 'recording');
+                        this.addLogEntry('🎤 Started batch recording (WebSocket unavailable)', 'info');
+                    }
+                    
+                } catch (error) {
+                    this.updateStatus('Microphone access denied: ' + error.message, 'error');
+                    this.addLogEntry(`❌ Microphone error: ${error.message}`, 'error');
+                }
+            }
+            
+            stopRecording() {
+                if (this.mediaRecorder && this.isRecording) {
+                    this.mediaRecorder.stop();
+                    this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                    this.isRecording = false;
+                    
+                    if (this.isStreamingMode && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        // Stop streaming translation
+                        this.ws.send(JSON.stringify({
+                            type: 'stop_streaming',
+                            sessionId: this.sessionId,
+                            timestamp: Date.now()
+                        }));
+                        
+                        this.recordButton.textContent = '🎤 start talking';
+                        this.recordButton.classList.remove('recording');
+                        this.updateStatus('Ready for next recording...', 'ready');
+                        this.addLogEntry('⏹️ Stopped streaming translation', 'info');
+                    } else {
+                        this.recordButton.textContent = '🎤 start talking';
+                        this.recordButton.classList.remove('recording');
+                        this.updateStatus('Processing...', 'processing');
+                        this.addLogEntry('⏹️ Stopped recording', 'info');
+                    }
+                }
+            }
+            
+            async processAudio() {
+                try {
+                    this.startTime = Date.now(); // Set start time for latency measurement
+                    this.operationStartTime = Date.now();
+                    this.addLogEntry('🎤 Starting translation pipeline...', 'info');
+                    
+                    const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+                    const formData = new FormData();
+                    formData.append('audio', audioBlob);
+                    formData.append('sourceLanguage', this.sourceLanguage.value);
+                    formData.append('targetLanguage', this.targetLanguage.value);
+                    
+                    // Step 1: Speech-to-Text
+                    this.updateStatus('Converting speech to text...', 'processing');
+                    const sttStart = Date.now();
+                    this.addLogEntry(`🔊 STT: Processing ${this.sourceLanguage.value} audio (${Math.round(audioBlob.size/1024)}KB)...`, 'stt');
+                    
+                    const baseUrl = window.location.origin;
+                    const sttResponse = await fetch(baseUrl + '/api/stt', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (!sttResponse.ok) {
+                        throw new Error('STT failed: ' + sttResponse.statusText);
+                    }
+                    
+                    const sttResult = await sttResponse.json();
+                    const sttLatency = Date.now() - sttStart;
+                    this.addLogEntry(`✅ STT: "${sttResult.transcript}" (${sttLatency}ms)`, 'stt');
+                    this.transcript.textContent = sttResult.transcript;
+                    
+                    // Step 2: Translation
+                    this.updateStatus('Translating...', 'processing');
+                    const translateStart = Date.now();
+                    this.addLogEntry(`🔄 Translation: ${this.sourceLanguage.value} → ${this.targetLanguage.value}...`, 'translation');
+                    
+                    const translateResponse = await fetch(baseUrl + '/api/translate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            text: sttResult.transcript,
+                            sourceLanguage: this.sourceLanguage.value,
+                            targetLanguage: this.targetLanguage.value
+                        })
+                    });
+                    
+                    if (!translateResponse.ok) {
+                        throw new Error('Translation failed: ' + translateResponse.statusText);
+                    }
+                    
+                    const translateResult = await translateResponse.json();
+                    const translateLatency = Date.now() - translateStart;
+                    this.addLogEntry(`✅ Translation: "${translateResult.translatedText}" (${translateLatency}ms)`, 'translation');
+                    this.translation.textContent = translateResult.translatedText;
+                    
+                    // Step 3: Text-to-Speech
+                    this.updateStatus('Generating speech...', 'processing');
+                    const ttsStart = Date.now();
+                    this.addLogEntry(`🔊 TTS: Generating ${this.targetLanguage.value} audio...`, 'tts');
+                    
+                    const ttsResponse = await fetch(baseUrl + '/api/tts', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            text: translateResult.translatedText,
+                            language: this.targetLanguage.value,
+                            voice: this.targetLanguage.value === 'ja' ? 'ja-JP-NanamiNeural' : 'en-US-JennyNeural'
+                        })
+                    });
+                    
+                    if (!ttsResponse.ok) {
+                        throw new Error('TTS failed: ' + ttsResponse.statusText);
+                    }
+                    
+                    const audioArrayBuffer = await ttsResponse.arrayBuffer();
+                    const ttsLatency = Date.now() - ttsStart;
+                    this.addLogEntry(`✅ TTS: Generated ${Math.round(audioArrayBuffer.byteLength/1024)}KB audio (${ttsLatency}ms)`, 'tts');
+                    
+                    // Calculate total latency before audio playback
+                    const totalLatency = Date.now() - this.startTime;
+                    const latencySeconds = (totalLatency / 1000).toFixed(2);
+                    const isRealTime = totalLatency < 2000;
+                    const latencyColor = isRealTime ? '#2ecc71' : '#e74c3c';
+                    
+                    // Update latency display immediately
+                    this.latencyInfo.innerHTML = 
+                        `<span style="color: ${latencyColor}; font-weight: bold;">Round-trip latency: ${latencySeconds}s (${totalLatency}ms)</span><br>` +
+                        `${isRealTime ? '✅ Real-time performance' : '⚠️ Slower than target (>2s)'}`;
+                    
+                    this.addLogEntry(`📊 Pipeline breakdown: STT(${sttLatency}ms) + Translation(${translateLatency}ms) + TTS(${ttsLatency}ms) = ${totalLatency}ms total`, 'info');
+                    
+                    // Initialize AudioContext after user interaction (recording button was clicked)
+                    if (!this.audioContext) {
+                        try {
+                            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                            if (this.audioContext.state === 'suspended') {
+                                await this.audioContext.resume();
+                            }
+                            this.addLogEntry(`🔊 AudioContext initialized: ${this.audioContext.state}`, 'info');
+                        } catch (error) {
+                            this.addLogEntry(`❌ AudioContext initialization failed: ${error.message}`, 'error');
+                        }
+                    }
+                    
+                    // Try multiple audio playback methods for better compatibility
+                    try {
+                        // Method 1: Web Audio API (preferred for better compatibility)
+                        if (this.audioContext && this.audioContext.state === 'running') {
+                            try {
+                                const audioBuffer = await this.audioContext.decodeAudioData(audioArrayBuffer.slice());
+                                const source = this.audioContext.createBufferSource();
+                                source.buffer = audioBuffer;
+                                source.connect(this.audioContext.destination);
+                                
+                                source.onended = () => {
+                                    this.addLogEntry(`🎵 Web Audio API playback completed`, 'success');
+                                };
+                                
+                                source.start(0);
+                                this.addLogEntry(`🎵 Web Audio API playback started - Total pipeline: ${totalLatency}ms`, 'success');
+                                this.updateStatus('Translation complete! Audio playing...', 'ready');
+                                
+                            } catch (webAudioError) {
+                                this.addLogEntry(`❌ Web Audio API failed: ${webAudioError.message}`, 'error');
+                                // Fallback to HTML5 Audio
+                                this.tryHtml5AudioPlayback(audioArrayBuffer, totalLatency);
+                            }
+                        } else {
+                            // Fallback to HTML5 Audio if AudioContext not available
+                            this.tryHtml5AudioPlayback(audioArrayBuffer, totalLatency);
+                        }
+                        
+                    } catch (error) {
+                        this.addLogEntry(`❌ Audio playback setup failed: ${error.message}`, 'error');
+                        this.tryHtml5AudioPlayback(audioArrayBuffer, totalLatency);
+                    }
+                    
+                } catch (error) {
+                    this.addLogEntry(`❌ Pipeline error: ${error.message}`, 'error');
+                    this.updateStatus('Error: ' + error.message, 'error');
+                    console.error('Translation pipeline error:', error);
+                }
+            }
+            
+            updateStatus(message, type) {
+                this.status.textContent = message;
+                this.status.className = `status ${type}`;
+            }
+            
+            async checkServiceStatus() {
+                try {
+                    const response = await fetch(`${window.location.origin}/health`);
+                    const health = await response.json();
+                    
+                    this.updateServiceStatus('deepgram', health.services.deepgram);
+                    this.updateServiceStatus('deepl', health.services.deepl);
+                    this.updateServiceStatus('azure', health.services.azure);
+                    
+                    setTimeout(() => this.checkServiceStatus(), 30000);
+                } catch (error) {
+                    console.error('Failed to check service status:', error);
+                    setTimeout(() => this.checkServiceStatus(), 30000);
+                }
+            }
+            
+            updateServiceStatus(serviceName, serviceData) {
+                const statusEl = document.querySelector(`#${serviceName}Status .service-status`);
+                const latencyEl = document.querySelector(`#${serviceName}Status .service-latency`);
+                
+                if (statusEl) {
+                    statusEl.textContent = serviceData.status === 'healthy' ? '✅ Online' : '❌ Offline';
+                    statusEl.className = `service-status ${serviceData.status}`;
+                }
+                
+                if (latencyEl) {
+                    if (serviceData.latency !== undefined && serviceData.latency !== null) {
+                        latencyEl.textContent = `(${serviceData.latency}ms)`;
+                    } else {
+                        latencyEl.textContent = '';
+                    }
+                }
+            }
+            
+            tryHtml5AudioPlayback(audioArrayBuffer, totalLatency) {
+                this.addLogEntry(`🔄 Trying HTML5 Audio playback method...`, 'info');
+                
+                try {
+                    // Method 2: HTML5 Audio element with proper blob handling
+                    const playbackBlob = new Blob([audioArrayBuffer], { type: 'audio/wav' });
+                    const audioUrl = URL.createObjectURL(playbackBlob);
+                    const audio = new Audio();
+                    
+                    // Set audio properties for better compatibility
+                    audio.preload = 'auto';
+                    
+                    // Add comprehensive event listeners
+                    audio.addEventListener('loadstart', () => {
+                        this.addLogEntry(`🔄 HTML5 Audio loading started (${Math.round(audioArrayBuffer.byteLength/1024)}KB WAV)`, 'info');
+                    });
+                    
+                    audio.addEventListener('canplay', () => {
+                        this.addLogEntry(`✅ HTML5 Audio ready to play`, 'success');
+                    });
+                    
+                    audio.addEventListener('loadeddata', () => {
+                        this.addLogEntry(`📥 HTML5 Audio data loaded successfully`, 'success');
+                    });
+                    
+                    audio.addEventListener('error', (e) => {
+                        const errorMsg = e.target.error?.message || 'Unknown audio error';
+                        this.addLogEntry(`❌ HTML5 Audio error: ${errorMsg}`, 'error');
+                        this.addLogEntry(`❌ All audio playback methods failed`, 'error');
+                        this.updateStatus('Audio playback failed: ' + errorMsg, 'error');
+                        URL.revokeObjectURL(audioUrl);
+                    });
+                    
+                    audio.addEventListener('ended', () => {
+                        URL.revokeObjectURL(audioUrl);
+                        this.addLogEntry(`🎵 HTML5 Audio playback completed`, 'success');
+                    });
+                    
+                    audio.src = audioUrl;
+                    
+                    audio.play().then(() => {
+                        this.addLogEntry(`🎵 HTML5 Audio playback started - Total pipeline: ${totalLatency}ms`, 'success');
+                        this.updateStatus('Translation complete! Audio playing...', 'ready');
+                    }).catch(error => {
+                        this.addLogEntry(`❌ HTML5 Audio play() failed: ${error.message}`, 'error');
+                        this.addLogEntry(`❌ All audio playback methods failed`, 'error');
+                        this.updateStatus('Audio playback failed: ' + error.message, 'error');
+                        URL.revokeObjectURL(audioUrl);
+                    });
+                    
+                } catch (error) {
+                    this.addLogEntry(`❌ HTML5 Audio setup failed: ${error.message}`, 'error');
+                    this.addLogEntry(`❌ All audio playback methods failed`, 'error');
+                    this.updateStatus('Audio playback failed: No compatible method', 'error');
+                }
+            }
+            
+            addLogEntry(message, type = 'info') {
+                const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-entry ${type}`;
+                logEntry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span><span class="log-message">${message}</span>`;
+                
+                this.logContainer.appendChild(logEntry);
+                this.logContainer.scrollTop = this.logContainer.scrollHeight;
+                
+                // Keep only last 50 entries to prevent memory issues
+                while (this.logContainer.children.length > 50) {
+                    this.logContainer.removeChild(this.logContainer.firstChild);
+                }
+            }
+
+            async checkDeviceConnectivity() {
+                this.addLogEntry('🔍 Checking microphone and speaker connectivity...', 'info');
+                
+                // Check microphone access
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    this.addLogEntry('✅ Microphone access granted and working', 'success');
+                    
+                    // Test microphone input level detection
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const analyser = audioContext.createAnalyser();
+                    const microphone = audioContext.createMediaStreamSource(stream);
+                    microphone.connect(analyser);
+                    
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    analyser.getByteFrequencyData(dataArray);
+                    
+                    // Stop the stream after testing
+                    stream.getTracks().forEach(track => track.stop());
+                    audioContext.close();
+                    
+                    this.addLogEntry('✅ Microphone input level detection working', 'success');
+                } catch (error) {
+                    this.addLogEntry(`❌ Microphone access failed: ${error.message}`, 'error');
+                }
+                
+                // Check speaker/audio output capability
+                try {
+                    // Test if we can create and play a short audio beep
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // A4 note
+                    gainNode.gain.setValueAtTime(0.05, audioContext.currentTime); // Low volume
+                    
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + 0.1); // 100ms beep
+                    
+                    this.addLogEntry('✅ Speaker/audio output capability verified', 'success');
+                    audioContext.close();
+                } catch (error) {
+                    this.addLogEntry(`❌ Speaker test failed: ${error.message}`, 'error');
+                }
+                
+                // Check if browser supports required audio formats
+                const audio = new Audio();
+                const formats = {
+                    'WAV': 'audio/wav',
+                    'MP3': 'audio/mpeg',
+                    'WebM': 'audio/webm'
+                };
+                
+                for (const [format, mimeType] of Object.entries(formats)) {
+                    const canPlay = audio.canPlayType(mimeType);
+                    if (canPlay === 'probably' || canPlay === 'maybe') {
+                        this.addLogEntry(`✅ ${format} audio format supported (${canPlay})`, 'success');
+                    } else {
+                        this.addLogEntry(`❌ ${format} audio format not supported`, 'error');
+                    }
+                }
+                
+                // Check Web Audio API support
+                if (window.AudioContext || window.webkitAudioContext) {
+                    this.addLogEntry('✅ Web Audio API supported', 'success');
+                } else {
+                    this.addLogEntry('❌ Web Audio API not supported', 'error');
+                }
+                
+                // Check MediaRecorder API support
+                if (window.MediaRecorder) {
+                    this.addLogEntry('✅ MediaRecorder API supported', 'success');
+                } else {
+                    this.addLogEntry('❌ MediaRecorder API not supported', 'error');
+                }
+                
+                // Test simultaneous microphone and speaker operation (echo test)
+                this.addLogEntry('🔄 Testing simultaneous microphone and speaker operation...', 'info');
+                try {
+                    await this.performEchoTest();
+                } catch (error) {
+                    this.addLogEntry(`❌ Echo test failed: ${error.message}`, 'error');
+                }
+            }
+
+            async performEchoTest() {
+                try {
+                    // Get microphone access
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: {
+                            echoCancellation: false, // Disable echo cancellation for this test
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+                    
+                    this.addLogEntry('🎤 Microphone stream acquired for echo test', 'info');
+                    
+                    // Create audio context and connect microphone to speakers
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const microphone = audioContext.createMediaStreamSource(stream);
+                    const gainNode = audioContext.createGain();
+                    
+                    // Set low gain to prevent feedback loop
+                    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                    
+                    // Connect microphone input to speakers output (creates echo)
+                    microphone.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    this.addLogEntry('🔊 Echo feedback loop established - you should hear microphone input through speakers', 'success');
+                    
+                    // Play a test tone simultaneously
+                    const oscillator = audioContext.createOscillator();
+                    const toneGain = audioContext.createGain();
+                    
+                    oscillator.connect(toneGain);
+                    toneGain.connect(audioContext.destination);
+                    
+                    oscillator.frequency.setValueAtTime(800, audioContext.currentTime); // Higher pitch
+                    toneGain.gain.setValueAtTime(0.1, audioContext.currentTime);
+                    
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + 0.5); // 500ms tone
+                    
+                    this.addLogEntry('🎵 Test tone playing simultaneously with microphone echo', 'success');
+                    
+                    // Clean up after 2 seconds
+                    setTimeout(() => {
+                        stream.getTracks().forEach(track => track.stop());
+                        audioContext.close();
+                        this.addLogEntry('✅ Echo test completed - microphone and speakers working simultaneously', 'success');
+                    }, 2000);
+                    
+                } catch (error) {
+                    this.addLogEntry(`❌ Echo test failed: ${error.message}`, 'error');
+                    throw error;
+                }
+            }
+        }
+        
+        // Initialize the demo when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new SimpleTranslationDemo();
+        });
+    </script>
+</body>
+</html>
