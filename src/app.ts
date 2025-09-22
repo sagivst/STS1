@@ -74,6 +74,35 @@ app.get('/', (req, res) => {
 });
 
 app.get('/demo', (req, res) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'X-Frame-Options': 'SAMEORIGIN',
+    'X-Content-Type-Options': 'nosniff'
+  });
+  res.sendFile(path.join(__dirname, '../public/simple-demo.html'));
+});
+
+app.get('/mobile-demo', (req, res) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'X-Frame-Options': 'SAMEORIGIN',
+    'X-Content-Type-Options': 'nosniff',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+  });
+  
+  logger.info('Mobile demo access:', {
+    userAgent: req.headers['user-agent'],
+    origin: req.headers['origin'],
+    host: req.headers['host'],
+    ip: req.ip
+  });
+  
   res.sendFile(path.join(__dirname, '../public/simple-demo.html'));
 });
 
