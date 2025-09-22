@@ -51,7 +51,7 @@ export class STTService {
 
       connection.on(LiveTranscriptionEvents.Error, (error) => {
         logger.error(`STT error for session ${sessionId}:`, error);
-        throw new ServiceError('STT_ERROR', `Speech recognition failed: ${error.message}`, 500);
+        this.activeConnections.delete(sessionId);
       });
 
       connection.on(LiveTranscriptionEvents.Close, () => {

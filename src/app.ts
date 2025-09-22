@@ -161,7 +161,9 @@ app.get('/no-auth-demo', (req, res) => {
     'X-No-Auth': 'true',
     'X-Mobile-Access': 'enabled',
     'X-Mobile-Bypass': 'true',
-    'X-Tunnel-Auth': 'bypass'
+    'X-Tunnel-Auth': 'bypass',
+    'X-Skip-Auth': 'true',
+    'Authorization': 'Bearer bypass-token'
   });
   
   logger.info('No-auth demo access:', {

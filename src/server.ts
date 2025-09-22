@@ -40,20 +40,30 @@ class TranslationServer {
             
             logger.info(`Starting streaming translation for session ${currentSessionId}: ${sourceLanguage} → ${targetLanguage}`);
             
-            await sttService.startTranscription(currentSessionId!, sourceLanguage, (sttResult) => {
-              logger.debug(`STT result for session ${currentSessionId}: "${sttResult.transcript}" (final: ${sttResult.isFinal})`);
-              
+            try {
+              await sttService.startTranscription(currentSessionId!, sourceLanguage, (sttResult) => {
+                logger.debug(`STT result for session ${currentSessionId}: "${sttResult.transcript}" (final: ${sttResult.isFinal})`);
+                
+                ws.send(JSON.stringify({
+                  type: 'transcript',
+                  sessionId: currentSessionId,
+                  data: sttResult,
+                  timestamp: Date.now()
+                }));
+                
+                if (sttResult.isFinal && sttResult.transcript.trim()) {
+                  this.handleStreamingTranslation(ws, sttResult, sourceLanguage, targetLanguage, currentSessionId!);
+                }
+              });
+            } catch (error) {
+              logger.error(`Failed to start STT for session ${currentSessionId}:`, error);
               ws.send(JSON.stringify({
-                type: 'transcript',
+                type: 'error',
                 sessionId: currentSessionId,
-                data: sttResult,
+                data: { message: `STT connection failed: ${(error as Error).message}` },
                 timestamp: Date.now()
               }));
-              
-              if (sttResult.isFinal && sttResult.transcript.trim()) {
-                this.handleStreamingTranslation(ws, sttResult, sourceLanguage, targetLanguage, currentSessionId!);
-              }
-            });
+            }
             
           } else if (message.type === 'audio_chunk' && isStreamingActive && currentSessionId) {
             try {
