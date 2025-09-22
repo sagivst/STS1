@@ -24,6 +24,46 @@
                 padding: 20px;
             }
         }
+        
+        /* Ensure content doesn't overflow on small screens */
+        @media (max-width: 480px) {
+            body {
+                padding: 5px;
+                font-size: 14px;
+            }
+            
+            h1 {
+                font-size: 1.2em;
+                margin-bottom: 10px;
+            }
+            
+            .demo-container {
+                padding: 10px;
+                margin: 5px;
+            }
+            
+            select {
+                padding: 8px 10px;
+                font-size: 14px;
+                max-width: 120px;
+            }
+            
+            .record-button {
+                padding: 12px 20px;
+                font-size: 14px;
+                max-width: 200px;
+            }
+            
+            .status-section, .operation-log {
+                margin: 10px 0;
+                padding: 10px;
+            }
+            
+            .log-container {
+                max-height: 150px;
+                font-size: 12px;
+            }
+        }
         .demo-container {
             background: rgba(255, 255, 255, 0.1);
             padding: 15px;
@@ -95,6 +135,7 @@
             box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4);
             width: 100%;
             max-width: 250px;
+            min-height: 50px;
         }
         
         @media (min-width: 768px) {
@@ -402,7 +443,7 @@
             Switch languages to test both Japanese → English and English → Japanese with real-time audio
         </div>
         
-        <button id="recordButton" class="record-button">🎤 Start Recording</button>
+        <button id="recordButton" class="record-button">🎤 start talking</button>
         
         <div id="status" class="status ready">Ready to record</div>
         
@@ -461,12 +502,16 @@
                 this.startTime = null;
                 this.audioContext = null;
                 this.operationStartTime = null;
+                this.ws = null;
+                this.sessionId = `demo-${Date.now()}`;
+                this.isStreamingMode = true;
                 
                 this.initializeElements();
                 this.setupEventListeners();
                 this.updateLanguageOptions();
                 this.checkServiceStatus();
                 this.checkDeviceConnectivity();
+                this.connectWebSocket();
             }
             
             initializeElements() {
@@ -483,6 +528,60 @@
             setupEventListeners() {
                 this.recordButton.addEventListener('click', () => this.toggleRecording());
                 this.sourceLanguage.addEventListener('change', () => this.updateLanguageOptions());
+            }
+            
+            connectWebSocket() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}`;
+                
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    this.addLogEntry('🔗 WebSocket connected for streaming translation', 'success');
+                };
+                
+                this.ws.onmessage = (event) => {
+                    const message = JSON.parse(event.data);
+                    this.handleWebSocketMessage(message);
+                };
+                
+                this.ws.onclose = () => {
+                    this.addLogEntry('❌ WebSocket disconnected', 'error');
+                    // Attempt to reconnect after 3 seconds
+                    setTimeout(() => {
+                        this.addLogEntry('🔄 Attempting to reconnect WebSocket...', 'info');
+                        this.connectWebSocket();
+                    }, 3000);
+                };
+                
+                this.ws.onerror = (error) => {
+                    this.addLogEntry(`❌ WebSocket error: ${error.message}`, 'error');
+                };
+            }
+            
+            handleWebSocketMessage(message) {
+                switch (message.type) {
+                    case 'transcript':
+                        if (message.data.isFinal) {
+                            this.transcript.textContent = message.data.transcript;
+                            this.addLogEntry(`✅ STT: "${message.data.transcript}"`, 'stt');
+                        } else {
+                            // Show interim results with different styling
+                            this.transcript.innerHTML = `<span style="opacity: 0.7; font-style: italic;">${message.data.transcript}</span>`;
+                        }
+                        break;
+                    case 'translation':
+                        this.translation.textContent = message.data.translatedText;
+                        this.addLogEntry(`✅ Translation: "${message.data.translatedText}"`, 'translation');
+                        break;
+                    case 'audio':
+                        this.playAudio(message.data.audioData);
+                        this.addLogEntry('🔊 Playing translated audio', 'tts');
+                        break;
+                    case 'error':
+                        this.addLogEntry(`❌ Error: ${message.data.message}`, 'error');
+                        break;
+                }
             }
             
             updateLanguageOptions() {
@@ -516,32 +615,81 @@
                         }
                     });
                     
-                    this.mediaRecorder = new MediaRecorder(stream, {
-                        mimeType: 'audio/webm;codecs=opus'
-                    });
-                    
-                    this.audioChunks = [];
-                    this.startTime = Date.now();
-                    
-                    this.mediaRecorder.ondataavailable = (event) => {
-                        if (event.data.size > 0) {
-                            this.audioChunks.push(event.data);
-                        }
-                    };
-                    
-                    this.mediaRecorder.onstop = () => {
-                        this.processAudio();
-                    };
-                    
-                    this.mediaRecorder.start(1000); // Collect data every second
-                    this.isRecording = true;
-                    
-                    this.recordButton.textContent = '⏹️ Stop Recording';
-                    this.recordButton.classList.add('recording');
-                    this.updateStatus('Recording...', 'recording');
+                    if (this.isStreamingMode && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        // Streaming mode
+                        this.mediaRecorder = new MediaRecorder(stream, {
+                            mimeType: 'audio/webm;codecs=opus'
+                        });
+                        
+                        this.startTime = Date.now();
+                        
+                        // Start streaming translation
+                        this.ws.send(JSON.stringify({
+                            type: 'start_streaming',
+                            sessionId: this.sessionId,
+                            data: {
+                                sourceLanguage: this.sourceLanguage.value,
+                                targetLanguage: this.targetLanguage.value
+                            },
+                            timestamp: Date.now()
+                        }));
+                        
+                        this.mediaRecorder.ondataavailable = (event) => {
+                            if (event.data.size > 0 && this.ws.readyState === WebSocket.OPEN) {
+                                // Convert audio chunk to base64 and send via WebSocket
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                    const audioData = reader.result.split(',')[1]; // Remove data:audio/webm;base64, prefix
+                                    this.ws.send(JSON.stringify({
+                                        type: 'audio_chunk',
+                                        sessionId: this.sessionId,
+                                        data: { audioData },
+                                        timestamp: Date.now()
+                                    }));
+                                };
+                                reader.readAsDataURL(event.data);
+                            }
+                        };
+                        
+                        this.mediaRecorder.start(100); // Send chunks every 100ms for real-time processing
+                        this.isRecording = true;
+                        
+                        this.recordButton.textContent = '⏹️ stop talking';
+                        this.recordButton.classList.add('recording');
+                        this.updateStatus('Recording and translating in real-time...', 'recording');
+                        this.addLogEntry('🎤 Started streaming translation', 'info');
+                        
+                    } else {
+                        // Fallback to batch mode if WebSocket not available
+                        this.mediaRecorder = new MediaRecorder(stream, {
+                            mimeType: 'audio/webm;codecs=opus'
+                        });
+                        
+                        this.audioChunks = [];
+                        this.startTime = Date.now();
+                        
+                        this.mediaRecorder.ondataavailable = (event) => {
+                            if (event.data.size > 0) {
+                                this.audioChunks.push(event.data);
+                            }
+                        };
+                        
+                        this.mediaRecorder.onstop = () => {
+                            this.processAudio();
+                        };
+                        
+                        this.mediaRecorder.start(1000);
+                        this.isRecording = true;
+                        
+                        this.recordButton.textContent = '⏹️ stop talking';
+                        this.recordButton.classList.add('recording');
+                        this.updateStatus('Recording...', 'recording');
+                        this.addLogEntry('🎤 Started batch recording (WebSocket unavailable)', 'info');
+                    }
                     
                 } catch (error) {
                     this.updateStatus('Microphone access denied: ' + error.message, 'error');
+                    this.addLogEntry(`❌ Microphone error: ${error.message}`, 'error');
                 }
             }
             
@@ -551,9 +699,24 @@
                     this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
                     this.isRecording = false;
                     
-                    this.recordButton.textContent = '🎤 Start Recording';
-                    this.recordButton.classList.remove('recording');
-                    this.updateStatus('Processing...', 'processing');
+                    if (this.isStreamingMode && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        // Stop streaming translation
+                        this.ws.send(JSON.stringify({
+                            type: 'stop_streaming',
+                            sessionId: this.sessionId,
+                            timestamp: Date.now()
+                        }));
+                        
+                        this.recordButton.textContent = '🎤 start talking';
+                        this.recordButton.classList.remove('recording');
+                        this.updateStatus('Ready for next recording...', 'ready');
+                        this.addLogEntry('⏹️ Stopped streaming translation', 'info');
+                    } else {
+                        this.recordButton.textContent = '🎤 start talking';
+                        this.recordButton.classList.remove('recording');
+                        this.updateStatus('Processing...', 'processing');
+                        this.addLogEntry('⏹️ Stopped recording', 'info');
+                    }
                 }
             }
             

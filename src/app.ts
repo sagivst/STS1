@@ -93,14 +93,17 @@ app.get('/mobile-demo', (req, res) => {
     'X-Content-Type-Options': 'nosniff',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'X-Mobile-Demo': 'true',
+    'X-Bypass-Auth': 'mobile-demo'
   });
   
   logger.info('Mobile demo access:', {
     userAgent: req.headers['user-agent'],
     origin: req.headers['origin'],
     host: req.headers['host'],
-    ip: req.ip
+    ip: req.ip,
+    isMobile: /Mobile|Android|iPhone|iPad/.test(req.headers['user-agent'] || '')
   });
   
   res.sendFile(path.join(__dirname, '../public/simple-demo.html'));
@@ -282,7 +285,8 @@ async function performHealthChecks(): Promise<{ overall: string; services: any }
 
   try {
     const start = Date.now();
-    await translationService.translateText('test', 'en', 'ja', 'health-check');
+    const uniqueText = `health-check-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    await translationService.translateText(uniqueText, 'en', 'ja', 'health-check');
     services.deepl.status = 'healthy';
     services.deepl.latency = Date.now() - start;
   } catch (error) {
@@ -292,7 +296,8 @@ async function performHealthChecks(): Promise<{ overall: string; services: any }
 
   try {
     const start = Date.now();
-    await ttsService.synthesizeSpeech('test', 'en', 'health-check');
+    const uniqueText = `health-check-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    await ttsService.synthesizeSpeech(uniqueText, 'en', 'health-check');
     services.azure.status = 'healthy';
     services.azure.latency = Date.now() - start;
   } catch (error) {
