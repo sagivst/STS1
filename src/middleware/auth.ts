@@ -50,6 +50,62 @@ export function requirePermission(permission: string) {
   };
 }
 
+export function authenticateGitHubToken(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (token && (token.startsWith('ghs_') || token.startsWith('ghp_'))) {
+    req.user = {
+      id: 'github-user',
+      email: 'github-user@codespaces.github.com',
+      permissions: ['translate'],
+      sessionLimit: config.performance.maxConcurrentSessions,
+    };
+    
+    logger.debug('GitHub token authentication successful');
+    return next();
+  }
+  
+  return authenticateToken(req, res, next);
+}
+
+export function optionalAuthentication(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  const authHeader = req.headers['authorization'];
+  const githubToken = req.headers['x-github-token'] || req.headers['x-github-token'];
+  
+  logger.debug('Optional authentication - Headers received:', {
+    hasAuth: !!authHeader,
+    hasGithubToken: !!githubToken,
+    userAgent: req.headers['user-agent'],
+    origin: req.headers['origin'],
+    host: req.headers['host']
+  });
+  
+  if (githubToken) {
+    req.user = {
+      id: 'codespaces-user',
+      email: 'codespaces-user@github.com',
+      permissions: ['translate'],
+      sessionLimit: config.performance.maxConcurrentSessions,
+    };
+    
+    logger.debug('GitHub Codespaces token authentication successful');
+    return next();
+  }
+  
+  if (!authHeader) {
+    logger.debug('No authorization header provided, continuing without authentication');
+    return next();
+  }
+  
+  try {
+    authenticateGitHubToken(req, res, next);
+  } catch (error) {
+    logger.debug('Optional authentication failed, continuing without user context');
+    next();
+  }
+}
+
 export function generateToken(user: Partial<AuthenticatedUser>): string {
   return jwt.sign(
     {

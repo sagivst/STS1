@@ -13,7 +13,7 @@ export class TTSService {
   constructor() {
     this.speechConfig = sdk.SpeechConfig.fromSubscription(
       config.services.azure.speechKey,
-      config.services.azure.speechRegion
+      config.services.azure.region
     );
   }
 
