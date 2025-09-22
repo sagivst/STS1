@@ -38,7 +38,7 @@ class TranslationServer {
             
             logger.info(`Starting streaming translation for session ${sessionId}: ${sourceLanguage} → ${targetLanguage}`);
             
-            await sttService.startTranscription(sessionId, (sttResult) => {
+            await sttService.startTranscription(sessionId, sourceLanguage, (sttResult) => {
               if (sttResult.isFinal && sttResult.transcript.trim()) {
                 this.handleStreamingTranslation(ws, sttResult, sourceLanguage, targetLanguage, sessionId);
               }

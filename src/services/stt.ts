@@ -8,11 +8,11 @@ export class STTService {
   private deepgram = createClient(config.services.deepgram.apiKey);
   private activeConnections = new Map<string, any>();
 
-  async startTranscription(sessionId: string, onTranscript: (result: STTResult) => void): Promise<void> {
+  async startTranscription(sessionId: string, sourceLanguage: string, onTranscript: (result: STTResult) => void): Promise<void> {
     try {
       const connection = this.deepgram.listen.live({
         model: config.services.deepgram.model,
-        language: config.services.deepgram.language,
+        language: sourceLanguage === 'ja' ? 'ja' : 'en-US',
         smart_format: true,
         interim_results: true,
         endpointing: 300,
@@ -30,7 +30,7 @@ export class STTService {
             transcript: transcript.transcript,
             confidence: transcript.confidence || 0,
             isFinal: data.is_final || false,
-            language: config.services.deepgram.language,
+            language: sourceLanguage === 'ja' ? 'ja' : 'en-US',
             timestamp: Date.now(),
           };
 

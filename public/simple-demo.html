@@ -461,6 +461,23 @@
             <div id="latencyInfo">🕐 Round-trip latency: -- ms<br>Waiting for first recording...</div>
         </div>
         
+        <div class="audio-levels" style="margin: 15px 0; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex: 1; margin-right: 10px;">
+                    <label style="font-size: 0.9em; color: #ccc;">🎤 Microphone Level:</label>
+                    <div class="audio-meter" style="width: 100%; height: 8px; background: #333; border-radius: 4px; overflow: hidden; margin-top: 4px;">
+                        <div id="micLevel" style="width: 0%; height: 100%; background: linear-gradient(90deg, #2ecc71, #f1c40f, #e74c3c); transition: width 0.1s;"></div>
+                    </div>
+                </div>
+                <div style="flex: 1; margin-left: 10px;">
+                    <label style="font-size: 0.9em; color: #ccc;">🔊 Speaker Level:</label>
+                    <div class="audio-meter" style="width: 100%; height: 8px; background: #333; border-radius: 4px; overflow: hidden; margin-top: 4px;">
+                        <div id="speakerLevel" style="width: 0%; height: 100%; background: linear-gradient(90deg, #3498db, #9b59b6, #e67e22); transition: width 0.1s;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
         <div class="services-status" id="servicesStatus">
             <h4 style="margin: 0 0 10px 0; font-size: 1em;">🔧 External Services Status</h4>
             <div class="service-indicators">
@@ -504,6 +521,9 @@
                 this.operationStartTime = null;
                 this.ws = null;
                 this.sessionId = `demo-${Date.now()}`;
+                this.currentRecordingSessionId = null;
+                this.recordingStartTime = null;
+                this.micLevelInterval = null;
                 this.isStreamingMode = true;
                 
                 this.initializeElements();
@@ -523,6 +543,8 @@
                 this.sourceLanguage = document.getElementById('sourceLanguage');
                 this.targetLanguage = document.getElementById('targetLanguage');
                 this.logContainer = document.getElementById('logContainer');
+                this.micLevel = document.getElementById('micLevel');
+                this.speakerLevel = document.getElementById('speakerLevel');
             }
             
             setupEventListeners() {
@@ -576,8 +598,8 @@
                         break;
                     case 'audio':
                         // Calculate and display streaming latency
-                        if (this.startTime) {
-                            const totalLatency = Date.now() - this.startTime;
+                        if (this.recordingStartTime) {
+                            const totalLatency = Date.now() - this.recordingStartTime;
                             const latencySeconds = (totalLatency / 1000).toFixed(2);
                             const isRealTime = totalLatency < 2000;
                             const latencyColor = isRealTime ? '#2ecc71' : '#e74c3c';
@@ -587,8 +609,8 @@
                                 `${isRealTime ? '✅ Real-time streaming performance' : '⚠️ Slower than target (>2s)'}`;
                         }
                         
-                        this.playAudio(message.data.audioData);
-                        this.addLogEntry('🔊 Playing translated audio', 'tts');
+                        this.addLogEntry(`🔊 Received ${Math.round(message.data.audioData.length * 0.75 / 1024)}KB audio from streaming translation`, 'success');
+                        this.playAudio(message.data.audioData, message.data.format);
                         break;
                     case 'error':
                         this.addLogEntry(`❌ Error: ${message.data.message}`, 'error');
@@ -596,63 +618,56 @@
                 }
             }
             
-            playAudio(base64AudioData) {
+            async playAudio(base64AudioData, format) {
                 try {
-                    // Convert base64 to ArrayBuffer for audio playback
-                    const binaryString = atob(base64AudioData);
-                    const bytes = new Uint8Array(binaryString.length);
-                    for (let i = 0; i < binaryString.length; i++) {
-                        bytes[i] = binaryString.charCodeAt(i);
-                    }
-                    const audioArrayBuffer = bytes.buffer;
+                    this.addLogEntry(`🔊 AudioContext initialized for streaming: ${this.audioContext ? this.audioContext.state : 'none'}`, 'info');
                     
-                    this.addLogEntry(`🔊 Received ${Math.round(audioArrayBuffer.byteLength/1024)}KB audio from streaming translation`, 'tts');
-                    
-                    // Initialize AudioContext after user interaction (recording button was clicked)
                     if (!this.audioContext) {
-                        try {
-                            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                            if (this.audioContext.state === 'suspended') {
-                                this.audioContext.resume();
-                            }
-                            this.addLogEntry(`🔊 AudioContext initialized for streaming: ${this.audioContext.state}`, 'info');
-                        } catch (error) {
-                            this.addLogEntry(`❌ AudioContext initialization failed: ${error.message}`, 'error');
-                        }
+                        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                     }
                     
-                    // Try multiple audio playback methods for better compatibility
-                    if (this.audioContext && this.audioContext.state === 'running') {
-                        try {
-                            // Method 1: Web Audio API (preferred for better compatibility)
-                            this.audioContext.decodeAudioData(audioArrayBuffer.slice()).then(audioBuffer => {
-                                const source = this.audioContext.createBufferSource();
-                                source.buffer = audioBuffer;
-                                source.connect(this.audioContext.destination);
-                                
-                                source.onended = () => {
-                                    this.addLogEntry(`🎵 Streaming audio playback completed`, 'success');
-                                };
-                                
-                                source.start(0);
-                                this.addLogEntry(`🎵 Streaming audio playback started via Web Audio API`, 'success');
-                                
-                            }).catch(webAudioError => {
-                                this.addLogEntry(`❌ Web Audio API failed: ${webAudioError.message}`, 'error');
-                                // Fallback to HTML5 Audio
-                                this.tryHtml5AudioPlaybackStreaming(audioArrayBuffer);
-                            });
-                        } catch (error) {
-                            this.addLogEntry(`❌ Web Audio API setup failed: ${error.message}`, 'error');
-                            this.tryHtml5AudioPlaybackStreaming(audioArrayBuffer);
-                        }
-                    } else {
-                        // Fallback to HTML5 Audio if AudioContext not available
-                        this.tryHtml5AudioPlaybackStreaming(audioArrayBuffer);
+                    if (this.audioContext.state === 'suspended') {
+                        await this.audioContext.resume();
                     }
+                    
+                    const audioData = atob(base64AudioData);
+                    const arrayBuffer = new ArrayBuffer(audioData.length);
+                    const view = new Uint8Array(arrayBuffer);
+                    for (let i = 0; i < audioData.length; i++) {
+                        view[i] = audioData.charCodeAt(i);
+                    }
+                    
+                    this.addLogEntry('🔊 Playing translated audio', 'info');
+                    const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+                    const source = this.audioContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    
+                    // Set up speaker level monitoring
+                    const analyser = this.audioContext.createAnalyser();
+                    analyser.fftSize = 256;
+                    source.connect(analyser);
+                    analyser.connect(this.audioContext.destination);
+                    
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    const speakerLevelInterval = setInterval(() => {
+                        analyser.getByteFrequencyData(dataArray);
+                        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                        const percentage = Math.min(100, (average / 128) * 100);
+                        this.speakerLevel.style.width = percentage + '%';
+                    }, 100);
+                    
+                    this.addLogEntry('🎵 Streaming audio playback started via Web Audio API', 'success');
+                    source.start(0);
+                    
+                    source.onended = () => {
+                        clearInterval(speakerLevelInterval);
+                        this.speakerLevel.style.width = '0%';
+                        this.addLogEntry(`🎵 Streaming audio playback completed`, 'success');
+                    };
                     
                 } catch (error) {
-                    this.addLogEntry(`❌ Audio playback failed: ${error.message}`, 'error');
+                    this.addLogEntry(`❌ Audio playback error: ${error.message}`, 'error');
+                    console.error('Audio playback error:', error);
                 }
             }
             
@@ -724,6 +739,27 @@
                         }
                     });
                     
+                    // Generate a new sessionId for each recording session
+                    this.currentRecordingSessionId = `demo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                    this.recordingStartTime = Date.now();
+                    
+                    // Set up microphone level monitoring
+                    if (!this.audioContext) {
+                        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    const source = this.audioContext.createMediaStreamSource(stream);
+                    const analyser = this.audioContext.createAnalyser();
+                    analyser.fftSize = 256;
+                    source.connect(analyser);
+                    
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    this.micLevelInterval = setInterval(() => {
+                        analyser.getByteFrequencyData(dataArray);
+                        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                        const percentage = Math.min(100, (average / 128) * 100);
+                        this.micLevel.style.width = percentage + '%';
+                    }, 100);
+                    
                     if (this.isStreamingMode && this.ws && this.ws.readyState === WebSocket.OPEN) {
                         // Streaming mode
                         this.mediaRecorder = new MediaRecorder(stream, {
@@ -735,7 +771,7 @@
                         // Start streaming translation
                         this.ws.send(JSON.stringify({
                             type: 'start_streaming',
-                            sessionId: this.sessionId,
+                            sessionId: this.currentRecordingSessionId,
                             data: {
                                 sourceLanguage: this.sourceLanguage.value,
                                 targetLanguage: this.targetLanguage.value
@@ -751,7 +787,7 @@
                                     const audioData = reader.result.split(',')[1]; // Remove data:audio/webm;base64, prefix
                                     this.ws.send(JSON.stringify({
                                         type: 'audio_chunk',
-                                        sessionId: this.sessionId,
+                                        sessionId: this.currentRecordingSessionId,
                                         data: { audioData },
                                         timestamp: Date.now()
                                     }));
@@ -808,11 +844,18 @@
                     this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
                     this.isRecording = false;
                     
+                    // Clean up audio level monitoring
+                    if (this.micLevelInterval) {
+                        clearInterval(this.micLevelInterval);
+                        this.micLevel.style.width = '0%';
+                        this.micLevelInterval = null;
+                    }
+                    
                     if (this.isStreamingMode && this.ws && this.ws.readyState === WebSocket.OPEN) {
                         // Stop streaming translation
                         this.ws.send(JSON.stringify({
                             type: 'stop_streaming',
-                            sessionId: this.sessionId,
+                            sessionId: this.currentRecordingSessionId,
                             timestamp: Date.now()
                         }));
                         
