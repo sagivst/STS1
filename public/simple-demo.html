@@ -255,7 +255,7 @@
                     
                     // Step 1: Speech-to-Text
                     this.updateStatus('Converting speech to text...', 'processing');
-                    const baseUrl = window.location.protocol + '//' + window.location.hostname + ':' + (window.location.port || '3000');
+                    const baseUrl = window.location.origin;
                     const sttResponse = await fetch(baseUrl + '/api/stt', {
                         method: 'POST',
                         body: formData
