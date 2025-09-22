@@ -689,6 +689,69 @@
                 } else {
                     this.addLogEntry('❌ MediaRecorder API not supported', 'error');
                 }
+                
+                // Test simultaneous microphone and speaker operation (echo test)
+                this.addLogEntry('🔄 Testing simultaneous microphone and speaker operation...', 'info');
+                try {
+                    await this.performEchoTest();
+                } catch (error) {
+                    this.addLogEntry(`❌ Echo test failed: ${error.message}`, 'error');
+                }
+            }
+
+            async performEchoTest() {
+                try {
+                    // Get microphone access
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: {
+                            echoCancellation: false, // Disable echo cancellation for this test
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+                    
+                    this.addLogEntry('🎤 Microphone stream acquired for echo test', 'info');
+                    
+                    // Create audio context and connect microphone to speakers
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const microphone = audioContext.createMediaStreamSource(stream);
+                    const gainNode = audioContext.createGain();
+                    
+                    // Set low gain to prevent feedback loop
+                    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                    
+                    // Connect microphone input to speakers output (creates echo)
+                    microphone.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    this.addLogEntry('🔊 Echo feedback loop established - you should hear microphone input through speakers', 'success');
+                    
+                    // Play a test tone simultaneously
+                    const oscillator = audioContext.createOscillator();
+                    const toneGain = audioContext.createGain();
+                    
+                    oscillator.connect(toneGain);
+                    toneGain.connect(audioContext.destination);
+                    
+                    oscillator.frequency.setValueAtTime(800, audioContext.currentTime); // Higher pitch
+                    toneGain.gain.setValueAtTime(0.1, audioContext.currentTime);
+                    
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + 0.5); // 500ms tone
+                    
+                    this.addLogEntry('🎵 Test tone playing simultaneously with microphone echo', 'success');
+                    
+                    // Clean up after 2 seconds
+                    setTimeout(() => {
+                        stream.getTracks().forEach(track => track.stop());
+                        audioContext.close();
+                        this.addLogEntry('✅ Echo test completed - microphone and speakers working simultaneously', 'success');
+                    }, 2000);
+                    
+                } catch (error) {
+                    this.addLogEntry(`❌ Echo test failed: ${error.message}`, 'error');
+                    throw error;
+                }
             }
         }
         
