@@ -109,6 +109,29 @@ app.get('/mobile-demo', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/simple-demo.html'));
 });
 
+app.get('/public-demo', (req, res) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'X-Frame-Options': 'SAMEORIGIN',
+    'X-Content-Type-Options': 'nosniff',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+  });
+  
+  logger.info('Public demo access:', {
+    userAgent: req.headers['user-agent'],
+    origin: req.headers['origin'],
+    host: req.headers['host'],
+    ip: req.ip,
+    isMobile: /Mobile|Android|iPhone|iPad/.test(req.headers['user-agent'] || '')
+  });
+  
+  res.sendFile(path.join(__dirname, '../public/simple-demo.html'));
+});
+
 app.get('/health', optionalAuthentication, async (req, res) => {
   const healthChecks = await performHealthChecks();
   

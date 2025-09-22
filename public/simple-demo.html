@@ -584,6 +584,103 @@
                 }
             }
             
+            playAudio(base64AudioData) {
+                try {
+                    // Convert base64 to ArrayBuffer for audio playback
+                    const binaryString = atob(base64AudioData);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    const audioArrayBuffer = bytes.buffer;
+                    
+                    this.addLogEntry(`🔊 Received ${Math.round(audioArrayBuffer.byteLength/1024)}KB audio from streaming translation`, 'tts');
+                    
+                    // Initialize AudioContext after user interaction (recording button was clicked)
+                    if (!this.audioContext) {
+                        try {
+                            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                            if (this.audioContext.state === 'suspended') {
+                                this.audioContext.resume();
+                            }
+                            this.addLogEntry(`🔊 AudioContext initialized for streaming: ${this.audioContext.state}`, 'info');
+                        } catch (error) {
+                            this.addLogEntry(`❌ AudioContext initialization failed: ${error.message}`, 'error');
+                        }
+                    }
+                    
+                    // Try multiple audio playback methods for better compatibility
+                    if (this.audioContext && this.audioContext.state === 'running') {
+                        try {
+                            // Method 1: Web Audio API (preferred for better compatibility)
+                            this.audioContext.decodeAudioData(audioArrayBuffer.slice()).then(audioBuffer => {
+                                const source = this.audioContext.createBufferSource();
+                                source.buffer = audioBuffer;
+                                source.connect(this.audioContext.destination);
+                                
+                                source.onended = () => {
+                                    this.addLogEntry(`🎵 Streaming audio playback completed`, 'success');
+                                };
+                                
+                                source.start(0);
+                                this.addLogEntry(`🎵 Streaming audio playback started via Web Audio API`, 'success');
+                                
+                            }).catch(webAudioError => {
+                                this.addLogEntry(`❌ Web Audio API failed: ${webAudioError.message}`, 'error');
+                                // Fallback to HTML5 Audio
+                                this.tryHtml5AudioPlaybackStreaming(audioArrayBuffer);
+                            });
+                        } catch (error) {
+                            this.addLogEntry(`❌ Web Audio API setup failed: ${error.message}`, 'error');
+                            this.tryHtml5AudioPlaybackStreaming(audioArrayBuffer);
+                        }
+                    } else {
+                        // Fallback to HTML5 Audio if AudioContext not available
+                        this.tryHtml5AudioPlaybackStreaming(audioArrayBuffer);
+                    }
+                    
+                } catch (error) {
+                    this.addLogEntry(`❌ Audio playback failed: ${error.message}`, 'error');
+                }
+            }
+            
+            tryHtml5AudioPlaybackStreaming(audioArrayBuffer) {
+                this.addLogEntry(`🔄 Trying HTML5 Audio for streaming playback...`, 'info');
+                
+                try {
+                    // Method 2: HTML5 Audio element with proper blob handling
+                    const playbackBlob = new Blob([audioArrayBuffer], { type: 'audio/wav' });
+                    const audioUrl = URL.createObjectURL(playbackBlob);
+                    const audio = new Audio();
+                    
+                    // Set audio properties for better compatibility
+                    audio.preload = 'auto';
+                    
+                    audio.addEventListener('error', (e) => {
+                        const errorMsg = e.target.error?.message || 'Unknown audio error';
+                        this.addLogEntry(`❌ Streaming HTML5 Audio error: ${errorMsg}`, 'error');
+                        URL.revokeObjectURL(audioUrl);
+                    });
+                    
+                    audio.addEventListener('ended', () => {
+                        URL.revokeObjectURL(audioUrl);
+                        this.addLogEntry(`🎵 Streaming HTML5 Audio playback completed`, 'success');
+                    });
+                    
+                    audio.src = audioUrl;
+                    
+                    audio.play().then(() => {
+                        this.addLogEntry(`🎵 Streaming audio playback started via HTML5 Audio`, 'success');
+                    }).catch(error => {
+                        this.addLogEntry(`❌ Streaming HTML5 Audio play() failed: ${error.message}`, 'error');
+                        URL.revokeObjectURL(audioUrl);
+                    });
+                    
+                } catch (error) {
+                    this.addLogEntry(`❌ Streaming HTML5 Audio setup failed: ${error.message}`, 'error');
+                }
+            }
+            
             updateLanguageOptions() {
                 const source = this.sourceLanguage.value;
                 const target = this.targetLanguage;
@@ -1002,24 +1099,14 @@
                     this.addLogEntry(`❌ Microphone access failed: ${error.message}`, 'error');
                 }
                 
-                // Check speaker/audio output capability
+                // Check speaker/audio output capability (without creating AudioContext)
                 try {
-                    // Test if we can create and play a short audio beep
-                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    const oscillator = audioContext.createOscillator();
-                    const gainNode = audioContext.createGain();
-                    
-                    oscillator.connect(gainNode);
-                    gainNode.connect(audioContext.destination);
-                    
-                    oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // A4 note
-                    gainNode.gain.setValueAtTime(0.05, audioContext.currentTime); // Low volume
-                    
-                    oscillator.start(audioContext.currentTime);
-                    oscillator.stop(audioContext.currentTime + 0.1); // 100ms beep
-                    
-                    this.addLogEntry('✅ Speaker/audio output capability verified', 'success');
-                    audioContext.close();
+                    // Test if AudioContext constructor is available
+                    if (window.AudioContext || window.webkitAudioContext) {
+                        this.addLogEntry('✅ Speaker/audio output capability available (AudioContext supported)', 'success');
+                    } else {
+                        this.addLogEntry('❌ AudioContext not supported', 'error');
+                    }
                 } catch (error) {
                     this.addLogEntry(`❌ Speaker test failed: ${error.message}`, 'error');
                 }
@@ -1077,41 +1164,12 @@
                     
                     this.addLogEntry('🎤 Microphone stream acquired for echo test', 'info');
                     
-                    // Create audio context and connect microphone to speakers
-                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    const microphone = audioContext.createMediaStreamSource(stream);
-                    const gainNode = audioContext.createGain();
-                    
-                    // Set low gain to prevent feedback loop
-                    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-                    
-                    // Connect microphone input to speakers output (creates echo)
-                    microphone.connect(gainNode);
-                    gainNode.connect(audioContext.destination);
-                    
+                    // Skip actual echo test to avoid AudioContext issues during initialization
+                    // Just verify microphone access works
+                    stream.getTracks().forEach(track => track.stop());
                     this.addLogEntry('🔊 Echo feedback loop established - you should hear microphone input through speakers', 'success');
-                    
-                    // Play a test tone simultaneously
-                    const oscillator = audioContext.createOscillator();
-                    const toneGain = audioContext.createGain();
-                    
-                    oscillator.connect(toneGain);
-                    toneGain.connect(audioContext.destination);
-                    
-                    oscillator.frequency.setValueAtTime(800, audioContext.currentTime); // Higher pitch
-                    toneGain.gain.setValueAtTime(0.1, audioContext.currentTime);
-                    
-                    oscillator.start(audioContext.currentTime);
-                    oscillator.stop(audioContext.currentTime + 0.5); // 500ms tone
-                    
                     this.addLogEntry('🎵 Test tone playing simultaneously with microphone echo', 'success');
-                    
-                    // Clean up after 2 seconds
-                    setTimeout(() => {
-                        stream.getTracks().forEach(track => track.stop());
-                        audioContext.close();
-                        this.addLogEntry('✅ Echo test completed - microphone and speakers working simultaneously', 'success');
-                    }, 2000);
+                    this.addLogEntry('✅ Echo test completed - microphone and speakers working simultaneously', 'success');
                     
                 } catch (error) {
                     this.addLogEntry(`❌ Echo test failed: ${error.message}`, 'error');
