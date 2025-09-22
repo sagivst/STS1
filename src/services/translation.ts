@@ -101,12 +101,12 @@ export class TranslationService {
     }
   }
 
-  private mapLanguageCode(language: 'en' | 'ja'): deepl.SourceLanguageCode | deepl.TargetLanguageCode {
-    const languageMap: Record<string, deepl.SourceLanguageCode | deepl.TargetLanguageCode> = {
-      'en': 'en' as deepl.SourceLanguageCode,
-      'ja': 'ja' as deepl.SourceLanguageCode,
+  private mapLanguageCode(language: 'en' | 'ja'): string {
+    const languageMap: Record<string, string> = {
+      'en': 'en-US',
+      'ja': 'ja',
     };
-    return languageMap[language];
+    return languageMap[language] || language;
   }
 
   private calculateConfidence(result: deepl.TextResult): number {

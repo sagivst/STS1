@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Japanese → English Real-time Translation Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .demo-container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 40px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+        h1 {
+            margin-bottom: 30px;
+            font-size: 2.2em;
+        }
+        .language-selector {
+            margin: 30px 0;
+        }
+        select {
+            padding: 15px 20px;
+            font-size: 18px;
+            border: none;
+            border-radius: 10px;
+            background: white;
+            color: #333;
+            margin: 0 10px;
+        }
+        .record-button {
+            background: #ff4757;
+            color: white;
+            border: none;
+            padding: 20px 40px;
+            font-size: 20px;
+            border-radius: 50px;
+            cursor: pointer;
+            margin: 30px 0;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4);
+        }
+        .record-button:hover {
+            background: #ff3742;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 71, 87, 0.6);
+        }
+        .record-button.recording {
+            background: #ffa502;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: bold;
+            min-height: 20px;
+        }
+        .status.ready { background: rgba(46, 213, 115, 0.3); }
+        .status.recording { background: rgba(255, 165, 2, 0.3); }
+        .status.processing { background: rgba(52, 152, 219, 0.3); }
+        .status.error { background: rgba(231, 76, 60, 0.3); }
+        .transcript-box {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            border-radius: 15px;
+            margin: 20px 0;
+            min-height: 60px;
+            border-left: 5px solid #3498db;
+        }
+        .translation-box {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            border-radius: 15px;
+            margin: 20px 0;
+            min-height: 60px;
+            border-left: 5px solid #2ecc71;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        .latency-info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            font-size: 1em;
+            text-align: center;
+            border-left: 5px solid #f39c12;
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <h1>🎤 → 🔊 Real-time Translation Demo</h1>
+        
+        <div class="language-selector">
+            <label>From:</label>
+            <select id="sourceLanguage">
+                <option value="ja">🇯🇵 Japanese</option>
+                <option value="en">🇺🇸 English</option>
+            </select>
+            
+            <label>To:</label>
+            <select id="targetLanguage">
+                <option value="en">🇺🇸 English</option>
+                <option value="ja">🇯🇵 Japanese</option>
+            </select>
+        </div>
+        
+        <button id="recordButton" class="record-button">🎤 Start Recording</button>
+        
+        <div id="status" class="status ready">Ready to record</div>
+        
+        <div class="transcript-box">
+            <strong>Original Speech:</strong>
+            <div id="transcript">Click record and speak...</div>
+        </div>
+        
+        <div class="translation-box">
+            <strong>Translation:</strong>
+            <div id="translation">Translation will appear here...</div>
+        </div>
+        
+        <div class="latency-info">
+            <div id="latencyInfo">🕐 Round-trip latency: -- ms<br>Waiting for first recording...</div>
+        </div>
+    </div>
+
+    <script>
+        class SimpleTranslationDemo {
+            constructor() {
+                this.isRecording = false;
+                this.mediaRecorder = null;
+                this.audioChunks = [];
+                this.startTime = null;
+                
+                this.initializeElements();
+                this.setupEventListeners();
+                this.updateLanguageOptions();
+            }
+            
+            initializeElements() {
+                this.recordButton = document.getElementById('recordButton');
+                this.status = document.getElementById('status');
+                this.transcript = document.getElementById('transcript');
+                this.translation = document.getElementById('translation');
+                this.latencyInfo = document.getElementById('latencyInfo');
+                this.sourceLanguage = document.getElementById('sourceLanguage');
+                this.targetLanguage = document.getElementById('targetLanguage');
+            }
+            
+            setupEventListeners() {
+                this.recordButton.addEventListener('click', () => this.toggleRecording());
+                this.sourceLanguage.addEventListener('change', () => this.updateLanguageOptions());
+            }
+            
+            updateLanguageOptions() {
+                const source = this.sourceLanguage.value;
+                const target = this.targetLanguage;
+                
+                // Auto-switch target language
+                if (source === 'ja') {
+                    target.value = 'en';
+                } else {
+                    target.value = 'ja';
+                }
+            }
+            
+            async toggleRecording() {
+                if (this.isRecording) {
+                    this.stopRecording();
+                } else {
+                    await this.startRecording();
+                }
+            }
+            
+            async startRecording() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: {
+                            sampleRate: 16000,
+                            channelCount: 1,
+                            echoCancellation: true,
+                            noiseSuppression: true
+                        }
+                    });
+                    
+                    this.mediaRecorder = new MediaRecorder(stream, {
+                        mimeType: 'audio/webm;codecs=opus'
+                    });
+                    
+                    this.audioChunks = [];
+                    this.startTime = Date.now();
+                    
+                    this.mediaRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0) {
+                            this.audioChunks.push(event.data);
+                        }
+                    };
+                    
+                    this.mediaRecorder.onstop = () => {
+                        this.processAudio();
+                    };
+                    
+                    this.mediaRecorder.start(1000); // Collect data every second
+                    this.isRecording = true;
+                    
+                    this.recordButton.textContent = '⏹️ Stop Recording';
+                    this.recordButton.classList.add('recording');
+                    this.updateStatus('Recording...', 'recording');
+                    
+                } catch (error) {
+                    this.updateStatus('Microphone access denied: ' + error.message, 'error');
+                }
+            }
+            
+            stopRecording() {
+                if (this.mediaRecorder && this.isRecording) {
+                    this.mediaRecorder.stop();
+                    this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                    this.isRecording = false;
+                    
+                    this.recordButton.textContent = '🎤 Start Recording';
+                    this.recordButton.classList.remove('recording');
+                    this.updateStatus('Processing...', 'processing');
+                }
+            }
+            
+            async processAudio() {
+                try {
+                    const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+                    const formData = new FormData();
+                    formData.append('audio', audioBlob);
+                    formData.append('sourceLanguage', this.sourceLanguage.value);
+                    formData.append('targetLanguage', this.targetLanguage.value);
+                    
+                    // Step 1: Speech-to-Text
+                    this.updateStatus('Converting speech to text...', 'processing');
+                    const sttResponse = await fetch('/api/stt', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (!sttResponse.ok) {
+                        throw new Error('STT failed: ' + sttResponse.statusText);
+                    }
+                    
+                    const sttResult = await sttResponse.json();
+                    this.transcript.textContent = sttResult.transcript;
+                    
+                    // Step 2: Translation
+                    this.updateStatus('Translating...', 'processing');
+                    const translateResponse = await fetch('/api/translate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            text: sttResult.transcript,
+                            sourceLanguage: this.sourceLanguage.value,
+                            targetLanguage: this.targetLanguage.value
+                        })
+                    });
+                    
+                    if (!translateResponse.ok) {
+                        throw new Error('Translation failed: ' + translateResponse.statusText);
+                    }
+                    
+                    const translateResult = await translateResponse.json();
+                    this.translation.textContent = translateResult.translatedText;
+                    
+                    // Step 3: Text-to-Speech
+                    this.updateStatus('Generating speech...', 'processing');
+                    const ttsResponse = await fetch('/api/tts', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            text: translateResult.translatedText,
+                            language: this.targetLanguage.value,
+                            voice: this.targetLanguage.value === 'ja' ? 'ja-JP-NanamiNeural' : 'en-US-JennyNeural'
+                        })
+                    });
+                    
+                    if (!ttsResponse.ok) {
+                        throw new Error('TTS failed: ' + ttsResponse.statusText);
+                    }
+                    
+                    const audioArrayBuffer = await ttsResponse.arrayBuffer();
+                    
+                    // Play the audio
+                    const audioBlob = new Blob([audioArrayBuffer], { type: 'audio/wav' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const audio = new Audio(audioUrl);
+                    
+                    audio.play().then(() => {
+                        const totalLatency = Date.now() - this.startTime;
+                        const latencySeconds = (totalLatency / 1000).toFixed(2);
+                        const isRealTime = totalLatency < 2000;
+                        const latencyColor = isRealTime ? '#2ecc71' : '#e74c3c';
+                        
+                        this.latencyInfo.innerHTML = 
+                            `<span style="color: ${latencyColor}; font-weight: bold;">Round-trip latency: ${latencySeconds}s (${totalLatency}ms)</span><br>` +
+                            `${isRealTime ? '✅ Real-time performance' : '⚠️ Slower than target (>2s)'}`;
+                        this.updateStatus('Translation complete! Audio playing...', 'ready');
+                    }).catch(error => {
+                        this.updateStatus('Audio playback failed: ' + error.message, 'error');
+                    });
+                    
+                } catch (error) {
+                    this.updateStatus('Error: ' + error.message, 'error');
+                    console.error('Translation pipeline error:', error);
+                }
+            }
+            
+            updateStatus(message, type) {
+                this.status.textContent = message;
+                this.status.className = `status ${type}`;
+            }
+        }
+        
+        // Initialize the demo when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new SimpleTranslationDemo();
+        });
+    </script>
+</body>
+</html>
