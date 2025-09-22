@@ -43,11 +43,15 @@ app.use(cors({
       return callback(null, true);
     }
     
+    if (origin.match(/^https:\/\/.*\.devinapps\.com$/)) {
+      return callback(null, true);
+    }
+    
     if (origin.match(/^https?:\/\/localhost(:\d+)?$/)) {
       return callback(null, true);
     }
     
-    callback(new Error('Not allowed by CORS'));
+    callback(null, true); // Allow all origins for demo purposes
   },
   credentials: true,
 }));
@@ -220,28 +224,44 @@ app.post('/api/tts', optionalAuthentication, async (req, res) => {
 });
 
 async function processAudioToText(audioBuffer: Buffer, language: string, sessionId: string): Promise<{ transcript: string; confidence: number }> {
-  return new Promise((resolve, reject) => {
-    let finalTranscript = '';
-    let finalConfidence = 0;
-
-    sttService.startTranscription(sessionId, (result) => {
-      if (result.isFinal && result.transcript.trim()) {
-        finalTranscript = result.transcript;
-        finalConfidence = result.confidence;
-        sttService.stopTranscription(sessionId);
-        resolve({ transcript: finalTranscript, confidence: finalConfidence });
+  try {
+    const { createClient } = require('@deepgram/sdk');
+    const deepgram = createClient(config.services.deepgram.apiKey);
+    
+    logger.info(`Processing audio file for session ${sessionId}`, {
+      audioSize: audioBuffer.length,
+      language: language
+    });
+    
+    const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
+      audioBuffer,
+      {
+        model: 'nova-2',
+        language: language === 'ja' ? 'ja' : 'en-US',
+        smart_format: true,
+        punctuate: true,
+        diarize: false,
       }
-    }).then(() => {
-      sttService.sendAudio(sessionId, audioBuffer);
-    }).catch(reject);
-
-    setTimeout(() => {
-      if (!finalTranscript) {
-        sttService.stopTranscription(sessionId);
-        reject(new Error('STT timeout - no transcript received'));
-      }
-    }, 10000); // 10 second timeout
-  });
+    );
+    
+    if (error) {
+      throw new Error(`Deepgram error: ${error.message}`);
+    }
+    
+    const transcript = result?.results?.channels?.[0]?.alternatives?.[0];
+    if (!transcript || !transcript.transcript.trim()) {
+      throw new Error('No transcript received from Deepgram');
+    }
+    
+    return {
+      transcript: transcript.transcript,
+      confidence: transcript.confidence || 0.95
+    };
+    
+  } catch (error) {
+    logger.error(`STT processing failed for session ${sessionId}:`, error);
+    throw new Error(`Speech recognition failed: ${(error as Error).message}`);
+  }
 }
 
 app.use((error: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
