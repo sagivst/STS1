@@ -526,33 +526,68 @@
                     const ttsLatency = Date.now() - ttsStart;
                     this.addLogEntry(`✅ TTS: Generated ${Math.round(audioArrayBuffer.byteLength/1024)}KB audio (${ttsLatency}ms)`, 'tts');
                     
-                    // Play the audio with better error handling
-                    const playbackBlob = new Blob([audioArrayBuffer], { type: 'audio/wav' });
-                    const audioUrl = URL.createObjectURL(playbackBlob);
-                    const audio = new Audio(audioUrl);
+                    // Calculate total latency before audio playback
+                    const totalLatency = Date.now() - this.startTime;
+                    const latencySeconds = (totalLatency / 1000).toFixed(2);
+                    const isRealTime = totalLatency < 2000;
+                    const latencyColor = isRealTime ? '#2ecc71' : '#e74c3c';
                     
-                    // Add event listeners for better debugging
-                    audio.addEventListener('loadstart', () => console.log('Audio load started'));
-                    audio.addEventListener('canplay', () => console.log('Audio can play'));
-                    audio.addEventListener('error', (e) => console.error('Audio error:', e));
+                    // Update latency display immediately
+                    this.latencyInfo.innerHTML = 
+                        `<span style="color: ${latencyColor}; font-weight: bold;">Round-trip latency: ${latencySeconds}s (${totalLatency}ms)</span><br>` +
+                        `${isRealTime ? '✅ Real-time performance' : '⚠️ Slower than target (>2s)'}`;
                     
-                    audio.play().then(() => {
-                        const totalLatency = Date.now() - this.startTime;
-                        const latencySeconds = (totalLatency / 1000).toFixed(2);
-                        const isRealTime = totalLatency < 2000;
-                        const latencyColor = isRealTime ? '#2ecc71' : '#e74c3c';
+                    this.addLogEntry(`📊 Pipeline breakdown: STT(${sttLatency}ms) + Translation(${translateLatency}ms) + TTS(${ttsLatency}ms) = ${totalLatency}ms total`, 'info');
+                    
+                    // Try multiple audio playback methods for better compatibility
+                    try {
+                        // Method 1: Direct blob with explicit MIME type
+                        const playbackBlob = new Blob([audioArrayBuffer], { type: 'audio/wav; codecs=pcm' });
+                        const audioUrl = URL.createObjectURL(playbackBlob);
+                        const audio = new Audio();
                         
-                        this.latencyInfo.innerHTML = 
-                            `<span style="color: ${latencyColor}; font-weight: bold;">Round-trip latency: ${latencySeconds}s (${totalLatency}ms)</span><br>` +
-                            `${isRealTime ? '✅ Real-time performance' : '⚠️ Slower than target (>2s)'}`;
+                        // Set audio properties for better compatibility
+                        audio.preload = 'auto';
+                        audio.crossOrigin = 'anonymous';
                         
-                        this.addLogEntry(`🎵 Audio playback started - Total pipeline: ${totalLatency}ms`, 'success');
-                        this.addLogEntry(`📊 Pipeline breakdown: STT(${sttLatency}ms) + Translation(${translateLatency}ms) + TTS(${ttsLatency}ms)`, 'info');
-                        this.updateStatus('Translation complete! Audio playing...', 'ready');
-                    }).catch(error => {
-                        this.addLogEntry(`❌ Audio playback failed: ${error.message}`, 'error');
-                        this.updateStatus('Audio playback failed: ' + error.message, 'error');
-                    });
+                        // Add comprehensive event listeners
+                        audio.addEventListener('loadstart', () => {
+                            this.addLogEntry(`🔄 Audio loading started (${Math.round(audioArrayBuffer.byteLength/1024)}KB WAV)`, 'info');
+                        });
+                        
+                        audio.addEventListener('canplay', () => {
+                            this.addLogEntry(`✅ Audio ready to play`, 'success');
+                        });
+                        
+                        audio.addEventListener('loadeddata', () => {
+                            this.addLogEntry(`📥 Audio data loaded successfully`, 'success');
+                        });
+                        
+                        audio.addEventListener('error', (e) => {
+                            this.addLogEntry(`❌ Audio error: ${e.target.error?.message || 'Unknown error'}`, 'error');
+                            // Try fallback method
+                            this.tryAlternativeAudioPlayback(audioArrayBuffer, totalLatency);
+                        });
+                        
+                        audio.addEventListener('ended', () => {
+                            URL.revokeObjectURL(audioUrl);
+                            this.addLogEntry(`🎵 Audio playback completed`, 'success');
+                        });
+                        
+                        audio.src = audioUrl;
+                        
+                        audio.play().then(() => {
+                            this.addLogEntry(`🎵 Audio playback started - Total pipeline: ${totalLatency}ms`, 'success');
+                            this.updateStatus('Translation complete! Audio playing...', 'ready');
+                        }).catch(error => {
+                            this.addLogEntry(`❌ Audio play() failed: ${error.message}`, 'error');
+                            this.tryAlternativeAudioPlayback(audioArrayBuffer, totalLatency);
+                        });
+                        
+                    } catch (error) {
+                        this.addLogEntry(`❌ Audio blob creation failed: ${error.message}`, 'error');
+                        this.tryAlternativeAudioPlayback(audioArrayBuffer, totalLatency);
+                    }
                     
                 } catch (error) {
                     this.addLogEntry(`❌ Pipeline error: ${error.message}`, 'error');
@@ -591,8 +626,47 @@
                     statusEl.className = `service-status ${serviceData.status}`;
                 }
                 
-                if (latencyEl && serviceData.latency !== undefined) {
-                    latencyEl.textContent = `(${serviceData.latency}ms)`;
+                if (latencyEl) {
+                    if (serviceData.latency !== undefined && serviceData.latency !== null) {
+                        latencyEl.textContent = `(${serviceData.latency}ms)`;
+                    } else {
+                        latencyEl.textContent = '';
+                    }
+                }
+            }
+            
+            tryAlternativeAudioPlayback(audioArrayBuffer, totalLatency) {
+                this.addLogEntry(`🔄 Trying alternative audio playback method...`, 'info');
+                
+                try {
+                    // Method 2: Web Audio API approach
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    audioContext.decodeAudioData(audioArrayBuffer.slice()).then(audioBuffer => {
+                        const source = audioContext.createBufferSource();
+                        source.buffer = audioBuffer;
+                        source.connect(audioContext.destination);
+                        
+                        source.onended = () => {
+                            this.addLogEntry(`🎵 Web Audio API playback completed`, 'success');
+                            audioContext.close();
+                        };
+                        
+                        source.start(0);
+                        this.addLogEntry(`🎵 Web Audio API playback started - Total pipeline: ${totalLatency}ms`, 'success');
+                        this.updateStatus('Translation complete! Audio playing via Web Audio API...', 'ready');
+                        
+                    }).catch(decodeError => {
+                        this.addLogEntry(`❌ Web Audio API decode failed: ${decodeError.message}`, 'error');
+                        this.addLogEntry(`❌ All audio playback methods failed`, 'error');
+                        this.updateStatus('Audio playback failed: Incompatible format', 'error');
+                        audioContext.close();
+                    });
+                    
+                } catch (webAudioError) {
+                    this.addLogEntry(`❌ Web Audio API not available: ${webAudioError.message}`, 'error');
+                    this.addLogEntry(`❌ All audio playback methods failed`, 'error');
+                    this.updateStatus('Audio playback failed: No compatible method', 'error');
                 }
             }
             
