@@ -575,6 +575,18 @@
                         this.addLogEntry(`✅ Translation: "${message.data.translatedText}"`, 'translation');
                         break;
                     case 'audio':
+                        // Calculate and display streaming latency
+                        if (this.startTime) {
+                            const totalLatency = Date.now() - this.startTime;
+                            const latencySeconds = (totalLatency / 1000).toFixed(2);
+                            const isRealTime = totalLatency < 2000;
+                            const latencyColor = isRealTime ? '#2ecc71' : '#e74c3c';
+                            
+                            this.latencyInfo.innerHTML = 
+                                `<span style="color: ${latencyColor}; font-weight: bold;">🕐 Round-trip latency: ${latencySeconds}s (${totalLatency}ms)</span><br>` +
+                                `${isRealTime ? '✅ Real-time streaming performance' : '⚠️ Slower than target (>2s)'}`;
+                        }
+                        
                         this.playAudio(message.data.audioData);
                         this.addLogEntry('🔊 Playing translated audio', 'tts');
                         break;
