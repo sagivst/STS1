@@ -33,36 +33,55 @@ class TranslationServer {
           logger.debug(`WebSocket message received for connection ${connectionId}:`, message);
           
           if (message.type === 'start_streaming') {
+            if (isStreamingActive) {
+              logger.warn(`Ignoring duplicate start_streaming request for connection ${connectionId}`);
+              return;
+            }
+            
             isStreamingActive = true;
             sourceLanguage = message.data.sourceLanguage;
             targetLanguage = message.data.targetLanguage;
-            currentSessionId = message.sessionId; // Use the sessionId from frontend
+            currentSessionId = message.sessionId;
             
-            logger.info(`Starting streaming translation for session ${currentSessionId}: ${sourceLanguage} → ${targetLanguage}`);
+            logger.info(`Starting streaming translation for session ${currentSessionId}: ${sourceLanguage} → ${targetLanguage} (client: ${connectionId})`);
             
             try {
               await sttService.startTranscription(currentSessionId!, sourceLanguage, (sttResult) => {
-                logger.debug(`STT result for session ${currentSessionId}: "${sttResult.transcript}" (final: ${sttResult.isFinal})`);
-                
-                ws.send(JSON.stringify({
-                  type: 'transcript',
-                  sessionId: currentSessionId,
-                  data: sttResult,
-                  timestamp: Date.now()
-                }));
-                
-                if (sttResult.isFinal && sttResult.transcript.trim()) {
-                  this.handleStreamingTranslation(ws, sttResult, sourceLanguage, targetLanguage, currentSessionId!);
+                if (ws.readyState === WebSocket.OPEN) {
+                  logger.debug(`STT result for session ${currentSessionId}: "${sttResult.transcript}" (final: ${sttResult.isFinal})`);
+                  
+                  ws.send(JSON.stringify({
+                    type: 'transcript',
+                    sessionId: currentSessionId,
+                    data: sttResult,
+                    timestamp: Date.now()
+                  }));
+                  
+                  if (sttResult.isFinal && sttResult.transcript.trim()) {
+                    this.handleStreamingTranslation(ws, sttResult, sourceLanguage, targetLanguage, currentSessionId!);
+                  }
                 }
               }, connectionId);
+              
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'streaming_started',
+                  sessionId: currentSessionId,
+                  timestamp: Date.now()
+                }));
+              }
+              
             } catch (error) {
               logger.error(`Failed to start STT for session ${currentSessionId}:`, error);
-              ws.send(JSON.stringify({
-                type: 'error',
-                sessionId: currentSessionId,
-                data: { message: `STT connection failed: ${(error as Error).message}` },
-                timestamp: Date.now()
-              }));
+              isStreamingActive = false;
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'error',
+                  sessionId: currentSessionId,
+                  data: { message: `STT connection failed: ${(error as Error).message}` },
+                  timestamp: Date.now()
+                }));
+              }
             }
             
           } else if (message.type === 'audio_chunk' && isStreamingActive && currentSessionId) {
@@ -72,12 +91,14 @@ class TranslationServer {
               sttService.sendAudio(currentSessionId, audioBuffer);
             } catch (error) {
               logger.error(`Error processing audio chunk for session ${currentSessionId}:`, error);
-              ws.send(JSON.stringify({
-                type: 'error',
-                sessionId: currentSessionId,
-                data: { message: `Audio processing error: ${(error as Error).message}` },
-                timestamp: Date.now()
-              }));
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'error',
+                  sessionId: currentSessionId,
+                  data: { message: `Audio processing error: ${(error as Error).message}` },
+                  timestamp: Date.now()
+                }));
+              }
             }
             
           } else if (message.type === 'stop_streaming' && currentSessionId) {
@@ -85,23 +106,27 @@ class TranslationServer {
             sttService.stopTranscription(currentSessionId, connectionId);
             logger.info(`Stopped streaming translation for session ${currentSessionId} (client: ${connectionId})`);
             
-            ws.send(JSON.stringify({
-              type: 'streaming_stopped',
-              sessionId: currentSessionId,
-              timestamp: Date.now()
-            }));
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
+                type: 'streaming_stopped',
+                sessionId: currentSessionId,
+                timestamp: Date.now()
+              }));
+            }
             
             currentSessionId = null;
           }
           
         } catch (error) {
           logger.error(`WebSocket message error for connection ${connectionId}:`, error);
-          ws.send(JSON.stringify({
-            type: 'error',
-            sessionId: currentSessionId || connectionId,
-            data: { message: (error as Error).message },
-            timestamp: Date.now()
-          }));
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: 'error',
+              sessionId: currentSessionId || connectionId,
+              data: { message: (error as Error).message },
+              timestamp: Date.now()
+            }));
+          }
         }
       });
 

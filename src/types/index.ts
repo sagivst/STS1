@@ -35,6 +35,14 @@ export interface STTResult {
   isFinal: boolean;
   language: string;
   timestamp: number;
+  error?: string;
+}
+
+export interface SessionData {
+  connection: any;
+  callbacks: Set<(result: STTResult) => void>;
+  sourceLanguage: string;
+  isConnecting?: boolean;
 }
 
 export interface TranslationResult {
