@@ -202,8 +202,8 @@ class TranslationServer {
       await cacheManager.connect();
       logger.info('Connected to Redis');
 
-      this.server.listen(config.port, () => {
-        logger.info(`Server started on port ${config.port}`);
+      this.server.listen(config.port, '0.0.0.0', () => {
+        logger.info(`Server started on port ${config.port} (0.0.0.0)`);
         logger.info(`Environment: ${config.nodeEnv}`);
         logger.info(`Max concurrent sessions: ${config.performance.maxConcurrentSessions}`);
       });
