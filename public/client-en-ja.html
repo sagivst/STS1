@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>English → Japanese Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 100%;
+            margin: 0;
+            padding: 10px;
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+            color: white;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        
+        .demo-container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 10px 0;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .session-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        input[type="text"] {
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+        }
+        
+        .primary-btn {
+            background: #ff6b6b;
+            color: white;
+        }
+        
+        .secondary-btn {
+            background: #4ecdc4;
+            color: white;
+        }
+        
+        .success-btn {
+            background: #51cf66;
+            color: white;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .status-indicator {
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        
+        .status-connected {
+            background: rgba(81, 207, 102, 0.3);
+            border: 1px solid #51cf66;
+        }
+        
+        .status-disconnected {
+            background: rgba(255, 107, 107, 0.3);
+            border: 1px solid #ff6b6b;
+        }
+        
+        .transcript-box {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            min-height: 60px;
+            border-left: 4px solid #4ecdc4;
+        }
+        
+        .translation-box {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            min-height: 60px;
+            border-left: 4px solid #51cf66;
+        }
+        
+        .audio-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin: 10px 0;
+        }
+        
+        .audio-level {
+            flex: 1;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .audio-level-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #51cf66, #ffd93d, #ff6b6b);
+            width: 0%;
+            transition: width 0.1s ease;
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 5px;
+                font-size: 14px;
+            }
+            
+            .session-controls {
+                flex-direction: column;
+            }
+            
+            input[type="text"] {
+                min-width: auto;
+                width: 100%;
+            }
+            
+            button {
+                width: 100%;
+                margin: 5px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <h1>🇺🇸 → 🇯🇵 English to Japanese Client</h1>
+        <p>Speak in English, get Japanese translation</p>
+        
+        <div class="session-controls">
+            <input type="text" id="sessionInput" placeholder="Enter Session ID or leave empty to create new">
+            <button id="connectBtn" class="primary-btn">Connect</button>
+            <button id="generateBtn" class="secondary-btn">Generate New Session</button>
+        </div>
+        
+        <div id="connectionStatus" class="status-indicator status-disconnected">
+            Disconnected
+        </div>
+        
+        <div id="sessionInfo" style="display: none;">
+            <strong>Session ID:</strong> <span id="currentSession"></span>
+            <button id="copySessionBtn" class="secondary-btn" style="margin-left: 10px;">Copy Session ID</button>
+        </div>
+        
+        <div class="audio-controls">
+            <button id="recordBtn" class="success-btn" disabled>🎤 Start Recording</button>
+            <div class="audio-level">
+                <div id="audioLevelBar" class="audio-level-bar"></div>
+            </div>
+        </div>
+        
+        <div class="transcript-box">
+            <h3>English Speech (Original):</h3>
+            <div id="originalText">Click record and speak in English...</div>
+        </div>
+        
+        <div class="translation-box">
+            <h3>Japanese Translation:</h3>
+            <div id="translatedText">Translation will appear here...</div>
+        </div>
+        
+        <audio id="audioPlayer" controls style="width: 100%; margin: 10px 0;"></audio>
+    </div>
+
+    <script>
+        class EnglishToJapaneseClient {
+            constructor() {
+                this.ws = null;
+                this.isRecording = false;
+                this.mediaRecorder = null;
+                this.audioContext = null;
+                this.analyser = null;
+                this.sessionId = null;
+                this.isConnected = false;
+                
+                this.initializeElements();
+                this.setupEventListeners();
+            }
+            
+            initializeElements() {
+                this.sessionInput = document.getElementById('sessionInput');
+                this.connectBtn = document.getElementById('connectBtn');
+                this.generateBtn = document.getElementById('generateBtn');
+                this.recordBtn = document.getElementById('recordBtn');
+                this.connectionStatus = document.getElementById('connectionStatus');
+                this.sessionInfo = document.getElementById('sessionInfo');
+                this.currentSession = document.getElementById('currentSession');
+                this.copySessionBtn = document.getElementById('copySessionBtn');
+                this.originalText = document.getElementById('originalText');
+                this.translatedText = document.getElementById('translatedText');
+                this.audioPlayer = document.getElementById('audioPlayer');
+                this.audioLevelBar = document.getElementById('audioLevelBar');
+            }
+            
+            setupEventListeners() {
+                this.connectBtn.addEventListener('click', () => this.connect());
+                this.generateBtn.addEventListener('click', () => this.generateNewSession());
+                this.recordBtn.addEventListener('click', () => this.toggleRecording());
+                this.copySessionBtn.addEventListener('click', () => this.copySessionId());
+                
+                this.sessionInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.connect();
+                    }
+                });
+            }
+            
+            generateNewSession() {
+                const newSessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                this.sessionInput.value = newSessionId;
+                this.connect();
+            }
+            
+            async connect() {
+                const sessionId = this.sessionInput.value.trim() || `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                
+                if (this.ws) {
+                    this.ws.close();
+                }
+                
+                try {
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${window.location.host}/ws`;
+                    
+                    this.ws = new WebSocket(wsUrl);
+                    this.sessionId = sessionId;
+                    
+                    this.ws.onopen = () => {
+                        console.log('WebSocket connected');
+                        this.isConnected = true;
+                        this.updateConnectionStatus(true);
+                        this.showSessionInfo();
+                    };
+                    
+                    this.ws.onmessage = (event) => {
+                        const message = JSON.parse(event.data);
+                        this.handleWebSocketMessage(message);
+                    };
+                    
+                    this.ws.onclose = () => {
+                        console.log('WebSocket disconnected');
+                        this.isConnected = false;
+                        this.updateConnectionStatus(false);
+                        this.hideSessionInfo();
+                    };
+                    
+                    this.ws.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                        this.isConnected = false;
+                        this.updateConnectionStatus(false);
+                    };
+                    
+                } catch (error) {
+                    console.error('Connection failed:', error);
+                    alert('Failed to connect. Please try again.');
+                }
+            }
+            
+            updateConnectionStatus(connected) {
+                if (connected) {
+                    this.connectionStatus.textContent = 'Connected';
+                    this.connectionStatus.className = 'status-indicator status-connected';
+                    this.recordBtn.disabled = false;
+                    this.connectBtn.textContent = 'Disconnect';
+                } else {
+                    this.connectionStatus.textContent = 'Disconnected';
+                    this.connectionStatus.className = 'status-indicator status-disconnected';
+                    this.recordBtn.disabled = true;
+                    this.connectBtn.textContent = 'Connect';
+                    if (this.isRecording) {
+                        this.stopRecording();
+                    }
+                }
+            }
+            
+            showSessionInfo() {
+                this.currentSession.textContent = this.sessionId;
+                this.sessionInfo.style.display = 'block';
+            }
+            
+            hideSessionInfo() {
+                this.sessionInfo.style.display = 'none';
+            }
+            
+            copySessionId() {
+                navigator.clipboard.writeText(this.sessionId).then(() => {
+                    this.copySessionBtn.textContent = 'Copied!';
+                    setTimeout(() => {
+                        this.copySessionBtn.textContent = 'Copy Session ID';
+                    }, 2000);
+                });
+            }
+            
+            async toggleRecording() {
+                if (this.isRecording) {
+                    this.stopRecording();
+                } else {
+                    await this.startRecording();
+                }
+            }
+            
+            async startRecording() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: {
+                            sampleRate: 16000,
+                            channelCount: 1,
+                            echoCancellation: true,
+                            noiseSuppression: true
+                        } 
+                    });
+                    
+                    this.setupAudioAnalysis(stream);
+                    
+                    this.mediaRecorder = new MediaRecorder(stream, {
+                        mimeType: 'audio/webm;codecs=opus'
+                    });
+                    
+                    this.mediaRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0 && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                                const audioData = reader.result.split(',')[1];
+                                this.ws.send(JSON.stringify({
+                                    type: 'audio_chunk',
+                                    sessionId: this.sessionId,
+                                    data: { audioData }
+                                }));
+                            };
+                            reader.readAsDataURL(event.data);
+                        }
+                    };
+                    
+                    this.mediaRecorder.start(100);
+                    this.isRecording = true;
+                    this.recordBtn.textContent = '🛑 Stop Recording';
+                    this.recordBtn.className = 'primary-btn';
+                    
+                    // Start streaming
+                    this.ws.send(JSON.stringify({
+                        type: 'start_streaming',
+                        sessionId: this.sessionId,
+                        data: {
+                            sourceLanguage: 'en',
+                            targetLanguage: 'ja'
+                        }
+                    }));
+                    
+                } catch (error) {
+                    console.error('Failed to start recording:', error);
+                    alert('Microphone access failed. Please check permissions.');
+                }
+            }
+            
+            stopRecording() {
+                if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                    this.mediaRecorder.stop();
+                    this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                }
+                
+                if (this.audioContext) {
+                    this.audioContext.close();
+                }
+                
+                this.isRecording = false;
+                this.recordBtn.textContent = '🎤 Start Recording';
+                this.recordBtn.className = 'success-btn';
+                this.audioLevelBar.style.width = '0%';
+                
+                // Stop streaming
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify({
+                        type: 'stop_streaming',
+                        sessionId: this.sessionId
+                    }));
+                }
+            }
+            
+            setupAudioAnalysis(stream) {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                this.analyser = this.audioContext.createAnalyser();
+                const source = this.audioContext.createMediaStreamSource(stream);
+                source.connect(this.analyser);
+                
+                this.analyser.fftSize = 256;
+                const bufferLength = this.analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                
+                const updateAudioLevel = () => {
+                    if (this.isRecording) {
+                        this.analyser.getByteFrequencyData(dataArray);
+                        const average = dataArray.reduce((a, b) => a + b) / bufferLength;
+                        const percentage = (average / 255) * 100;
+                        this.audioLevelBar.style.width = `${percentage}%`;
+                        requestAnimationFrame(updateAudioLevel);
+                    }
+                };
+                updateAudioLevel();
+            }
+            
+            handleWebSocketMessage(message) {
+                console.log('Received message:', message);
+                
+                switch (message.type) {
+                    case 'transcript':
+                        if (message.data.transcript) {
+                            this.originalText.textContent = message.data.transcript;
+                        }
+                        break;
+                        
+                    case 'translation':
+                        if (message.data.translatedText) {
+                            this.translatedText.textContent = message.data.translatedText;
+                        }
+                        break;
+                        
+                    case 'audio':
+                        if (message.data.audioData) {
+                            const audioBlob = this.base64ToBlob(message.data.audioData, 'audio/wav');
+                            const audioUrl = URL.createObjectURL(audioBlob);
+                            this.audioPlayer.src = audioUrl;
+                            this.audioPlayer.play().catch(e => console.log('Audio autoplay prevented:', e));
+                        }
+                        break;
+                        
+                    case 'error':
+                        console.error('Server error:', message.data.message);
+                        alert(`Error: ${message.data.message}`);
+                        break;
+                }
+            }
+            
+            base64ToBlob(base64, mimeType) {
+                const byteCharacters = atob(base64);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                return new Blob([byteArray], { type: mimeType });
+            }
+        }
+        
+        // Initialize the client when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new EnglishToJapaneseClient();
+        });
+    </script>
+</body>
+</html>
