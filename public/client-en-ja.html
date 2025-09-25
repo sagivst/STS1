@@ -177,7 +177,7 @@
         </div>
         
         <div class="audio-controls">
-            <button id="recordBtn" class="success-btn" disabled>🎤 Start Recording</button>
+            <button id="recordBtn" class="success-btn" disabled>💬 Start Conversation</button>
             <div class="audio-level">
                 <div id="audioLevelBar" class="audio-level-bar"></div>
             </div>
@@ -367,7 +367,7 @@
                     
                     this.mediaRecorder.start(100);
                     this.isRecording = true;
-                    this.recordBtn.textContent = '🛑 Stop Recording';
+                    this.recordBtn.textContent = '🛑 Stop Conversation';
                     this.recordBtn.className = 'primary-btn';
                     
                     // Start streaming
@@ -397,7 +397,7 @@
                 }
                 
                 this.isRecording = false;
-                this.recordBtn.textContent = '🎤 Start Recording';
+                this.recordBtn.textContent = '💬 Start Conversation';
                 this.recordBtn.className = 'success-btn';
                 this.audioLevelBar.style.width = '0%';
                 
