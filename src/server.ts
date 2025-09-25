@@ -54,7 +54,7 @@ class TranslationServer {
                 if (sttResult.isFinal && sttResult.transcript.trim()) {
                   this.handleStreamingTranslation(ws, sttResult, sourceLanguage, targetLanguage, currentSessionId!);
                 }
-              });
+              }, connectionId);
             } catch (error) {
               logger.error(`Failed to start STT for session ${currentSessionId}:`, error);
               ws.send(JSON.stringify({
@@ -82,8 +82,8 @@ class TranslationServer {
             
           } else if (message.type === 'stop_streaming' && currentSessionId) {
             isStreamingActive = false;
-            sttService.stopTranscription(currentSessionId);
-            logger.info(`Stopped streaming translation for session ${currentSessionId}`);
+            sttService.stopTranscription(currentSessionId, connectionId);
+            logger.info(`Stopped streaming translation for session ${currentSessionId} (client: ${connectionId})`);
             
             ws.send(JSON.stringify({
               type: 'streaming_stopped',
@@ -107,14 +107,14 @@ class TranslationServer {
 
       ws.on('close', () => {
         if (isStreamingActive && currentSessionId) {
-          sttService.stopTranscription(currentSessionId);
+          sttService.stopTranscription(currentSessionId, connectionId);
         }
         logger.info(`WebSocket connection closed for connection ${connectionId}`);
       });
 
       ws.on('error', (error) => {
         if (isStreamingActive && currentSessionId) {
-          sttService.stopTranscription(currentSessionId);
+          sttService.stopTranscription(currentSessionId, connectionId);
         }
         logger.error(`WebSocket error for connection ${connectionId}:`, error);
       });

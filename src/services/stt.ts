@@ -7,65 +7,83 @@ import { ServiceError } from '../utils/errors';
 export class STTService {
   private deepgram = createClient(config.services.deepgram.apiKey);
   private activeConnections = new Map<string, any>();
+  private sessionClients = new Map<string, Set<string>>();
 
-  async startTranscription(sessionId: string, sourceLanguage: string, onTranscript: (result: STTResult) => void): Promise<void> {
+  async startTranscription(sessionId: string, sourceLanguage: string, onTranscript: (result: STTResult) => void, clientId?: string): Promise<void> {
     try {
-      if (this.activeConnections.has(sessionId)) {
-        logger.warn(`Cleaning up existing STT connection for session ${sessionId}`);
-        this.stopTranscription(sessionId);
+      if (!this.activeConnections.has(sessionId)) {
+        const connection = this.deepgram.listen.live({
+          model: config.services.deepgram.model,
+          language: sourceLanguage === 'ja' ? 'ja' : 'en-US',
+          smart_format: true,
+          interim_results: true,
+          endpointing: 300,
+          utterance_end_ms: 1000,
+          keep_alive: true,
+        });
+
+        logger.info(`Starting new STT connection for session ${sessionId}:`, {
+          sourceLanguage,
+          deepgramLanguage: sourceLanguage === 'ja' ? 'ja' : 'en-US',
+          model: config.services.deepgram.model
+        });
+
+        const sessionData = {
+          connection,
+          callbacks: new Set<(result: STTResult) => void>(),
+          sourceLanguage
+        };
+
+        connection.on(LiveTranscriptionEvents.Open, () => {
+          logger.info(`STT connection opened for session ${sessionId}`);
+        });
+
+        connection.on(LiveTranscriptionEvents.Transcript, (data) => {
+          const transcript = data.channel?.alternatives?.[0];
+          if (transcript && transcript.transcript.trim()) {
+            const result: STTResult = {
+              transcript: transcript.transcript,
+              confidence: transcript.confidence || 0,
+              isFinal: data.is_final || false,
+              language: sourceLanguage === 'ja' ? 'ja' : 'en-US',
+              timestamp: Date.now(),
+            };
+
+            logger.debug(`STT result for session ${sessionId}:`, {
+              transcript: result.transcript,
+              confidence: result.confidence,
+              isFinal: result.isFinal,
+              clientCount: sessionData.callbacks.size
+            });
+
+            sessionData.callbacks.forEach(callback => callback(result));
+          }
+        });
+
+        connection.on(LiveTranscriptionEvents.Error, (error) => {
+          logger.error(`STT error for session ${sessionId}:`, error);
+          this.activeConnections.delete(sessionId);
+          this.sessionClients.delete(sessionId);
+        });
+
+        connection.on(LiveTranscriptionEvents.Close, () => {
+          logger.info(`STT connection closed for session ${sessionId}`);
+          this.activeConnections.delete(sessionId);
+          this.sessionClients.delete(sessionId);
+        });
+
+        this.activeConnections.set(sessionId, sessionData);
+        this.sessionClients.set(sessionId, new Set());
       }
-      const connection = this.deepgram.listen.live({
-        model: config.services.deepgram.model,
-        language: sourceLanguage === 'ja' ? 'ja' : 'en-US',
-        smart_format: true,
-        interim_results: true,
-        endpointing: 300,
-        utterance_end_ms: 1000,
-        keep_alive: true,
-      });
 
-      logger.info(`Starting STT for session ${sessionId}:`, {
-        sourceLanguage,
-        deepgramLanguage: sourceLanguage === 'ja' ? 'ja' : 'en-US',
-        model: config.services.deepgram.model
-      });
-
-      connection.on(LiveTranscriptionEvents.Open, () => {
-        logger.info(`STT connection opened for session ${sessionId}`);
-      });
-
-      connection.on(LiveTranscriptionEvents.Transcript, (data) => {
-        const transcript = data.channel?.alternatives?.[0];
-        if (transcript && transcript.transcript.trim()) {
-          const result: STTResult = {
-            transcript: transcript.transcript,
-            confidence: transcript.confidence || 0,
-            isFinal: data.is_final || false,
-            language: sourceLanguage === 'ja' ? 'ja' : 'en-US',
-            timestamp: Date.now(),
-          };
-
-          logger.debug(`STT result for session ${sessionId}:`, {
-            transcript: result.transcript,
-            confidence: result.confidence,
-            isFinal: result.isFinal,
-          });
-
-          onTranscript(result);
-        }
-      });
-
-      connection.on(LiveTranscriptionEvents.Error, (error) => {
-        logger.error(`STT error for session ${sessionId}:`, error);
-        this.activeConnections.delete(sessionId);
-      });
-
-      connection.on(LiveTranscriptionEvents.Close, () => {
-        logger.info(`STT connection closed for session ${sessionId}`);
-        this.activeConnections.delete(sessionId);
-      });
-
-      this.activeConnections.set(sessionId, connection);
+      const sessionData = this.activeConnections.get(sessionId);
+      sessionData.callbacks.add(onTranscript);
+      
+      if (clientId) {
+        const clients = this.sessionClients.get(sessionId);
+        clients?.add(clientId);
+        logger.info(`Client ${clientId} joined session ${sessionId}. Total clients: ${clients?.size || 0}`);
+      }
       
     } catch (error) {
       logger.error(`Failed to start STT for session ${sessionId}:`, error);
@@ -75,12 +93,13 @@ export class STTService {
   }
 
   sendAudio(sessionId: string, audioData: Buffer): void {
-    const connection = this.activeConnections.get(sessionId);
-    if (!connection) {
+    const sessionData = this.activeConnections.get(sessionId);
+    if (!sessionData) {
       logger.error(`No active STT connection for session ${sessionId}. Active sessions: ${Array.from(this.activeConnections.keys()).join(', ')}`);
       return;
     }
 
+    const connection = sessionData.connection;
     try {
       if (connection.getReadyState && connection.getReadyState() === 1) {
         connection.send(audioData);
@@ -91,21 +110,56 @@ export class STTService {
     } catch (error) {
       logger.error(`Failed to send audio for session ${sessionId}:`, error);
       this.activeConnections.delete(sessionId);
+      this.sessionClients.delete(sessionId);
     }
   }
 
-  stopTranscription(sessionId: string): void {
-    const connection = this.activeConnections.get(sessionId);
-    if (connection) {
-      try {
-        connection.finish();
-        this.activeConnections.delete(sessionId);
-        logger.info(`STT stopped for session ${sessionId}`);
-      } catch (error) {
-        logger.error(`Error stopping STT for session ${sessionId}:`, error);
-      }
-    } else {
+  stopTranscription(sessionId: string, clientId?: string): void {
+    const sessionData = this.activeConnections.get(sessionId);
+    if (!sessionData) {
       logger.warn(`No active STT connection to stop for session ${sessionId}. Active sessions: ${Array.from(this.activeConnections.keys()).join(', ')}`);
+      return;
+    }
+
+    if (clientId) {
+      const clients = this.sessionClients.get(sessionId);
+      if (clients) {
+        clients.delete(clientId);
+        logger.info(`Client ${clientId} left session ${sessionId}. Remaining clients: ${clients.size}`);
+        
+        if (clients.size > 0) {
+          logger.info(`Keeping STT connection alive for session ${sessionId} - ${clients.size} clients still connected`);
+          return;
+        }
+      }
+    }
+
+    try {
+      sessionData.connection.finish();
+      this.activeConnections.delete(sessionId);
+      this.sessionClients.delete(sessionId);
+      logger.info(`STT stopped for session ${sessionId} - no clients remaining`);
+    } catch (error) {
+      logger.error(`Error stopping STT for session ${sessionId}:`, error);
+    }
+  }
+
+  removeClientCallback(sessionId: string, callback: (result: STTResult) => void, clientId?: string): void {
+    const sessionData = this.activeConnections.get(sessionId);
+    if (sessionData) {
+      sessionData.callbacks.delete(callback);
+      
+      if (clientId) {
+        const clients = this.sessionClients.get(sessionId);
+        if (clients) {
+          clients.delete(clientId);
+          logger.info(`Removed callback for client ${clientId} from session ${sessionId}. Remaining clients: ${clients.size}`);
+          
+          if (clients.size === 0 && sessionData.callbacks.size === 0) {
+            this.stopTranscription(sessionId);
+          }
+        }
+      }
     }
   }
 
